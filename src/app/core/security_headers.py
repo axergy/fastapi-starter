@@ -1,8 +1,9 @@
 """Security headers middleware (Helmet-style)."""
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import ASGIApp
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -10,7 +11,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     def __init__(
         self,
-        app,
+        app: ASGIApp,
         content_security_policy: str | None = "default-src 'self'",
         x_content_type_options: str = "nosniff",
         x_frame_options: str = "DENY",
@@ -36,7 +37,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if permissions_policy:
             self.headers["Permissions-Policy"] = permissions_policy
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
         for header, value in self.headers.items():
             response.headers[header] = value

@@ -71,13 +71,8 @@ testpaths = ["tests"]
 # --- MyPy Configuration ---
 [tool.mypy]
 python_version = "3.12"
-strict = false
-ignore_missing_imports = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-check_untyped_defs = true
-warn_return_any = false
-warn_unused_ignores = true
+strict = true
+warn_unused_ignores = false
 plugins = [
     "pydantic.mypy",
 ]
@@ -87,6 +82,38 @@ exclude = [
     "tests/",
     "src/alembic/",
 ]
+
+# Per-module overrides for third-party libraries without type stubs
+[[tool.mypy.overrides]]
+module = [
+    "temporalio.*",
+    "slowapi.*",
+    "asgi_correlation_id.*",
+    "prometheus_fastapi_instrumentator.*",
+    "jose",
+    "jose.*",
+    "zxcvbn",
+    "zxcvbn.*",
+    "argon2",
+    "argon2.*",
+]
+ignore_missing_imports = true
+
+# Allow untyped calls/decorators in modules that use libraries without stubs
+[[tool.mypy.overrides]]
+module = [
+    "src.app.core.security",
+    "src.app.core.logging",
+    "src.app.schemas.auth",
+    "src.app.temporal.activities",
+    "src.app.temporal.workflows",
+    "src.app.temporal.client",
+    "src.app.api.v1.auth",
+    "src.app.main",
+]
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+warn_return_any = false
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

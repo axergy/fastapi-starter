@@ -23,10 +23,17 @@ repos:
     rev: v1.13.0
     hooks:
       - id: mypy
-        args: [--ignore-missing-imports, --config-file=pyproject.toml]
+        args: [--config-file=pyproject.toml]
         exclude: ^(tests/|src/alembic/)
         additional_dependencies:
           - pydantic>=2.0
+          - pydantic-settings>=2.6.0
           - sqlmodel>=0.0.22
           - types-PyYAML
           - types-python-jose
+          - fastapi>=0.115.0
+          - sqlalchemy>=2.0.36
+          - structlog>=24.0.0
+          - alembic>=1.14.0
+          - argon2-cffi>=23.1.0
+          - temporalio>=1.7.1

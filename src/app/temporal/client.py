@@ -20,5 +20,5 @@ async def close_temporal_client() -> None:
     """Close the Temporal client. Call during shutdown."""
     global _client
     if _client is not None:
-        await _client.service_client.close()
+        await _client.service_client.close()  # type: ignore[attr-defined]
         _client = None
