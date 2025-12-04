@@ -18,7 +18,8 @@ from temporalio import activity
 
 from src.app.core.config import get_settings
 from src.app.core.migrations import run_migrations_sync
-from src.app.models.public import Tenant
+from src.app.models.base import utc_now
+from src.app.models.public import MembershipRole, Tenant, UserTenantMembership
 
 # Singleton sync engine for activities
 _sync_engine: Engine | None = None
@@ -214,4 +215,56 @@ async def update_tenant_status(input: UpdateTenantStatusInput) -> bool:
     else:
         activity.logger.info(f"Tenant {input.tenant_id} status updated to {input.status}")
 
+    return result
+
+
+# --- Membership Activities ---
+
+
+@dataclass
+class CreateMembershipInput:
+    user_id: str
+    tenant_id: str
+    role: str = MembershipRole.ADMIN.value
+
+
+def _sync_create_membership(user_id: str, tenant_id: str, role: str) -> bool:
+    """Synchronous membership creation logic."""
+    engine = get_sync_engine()
+    with Session(engine) as session:
+        # Check if membership already exists (idempotency)
+        stmt = select(UserTenantMembership).where(
+            UserTenantMembership.user_id == UUID(user_id),
+            UserTenantMembership.tenant_id == UUID(tenant_id),
+        )
+        existing = session.scalars(stmt).first()
+
+        if existing:
+            return True  # Already exists
+
+        membership = UserTenantMembership(
+            user_id=UUID(user_id),
+            tenant_id=UUID(tenant_id),
+            role=role,
+            created_at=utc_now(),
+        )
+        session.add(membership)
+        session.commit()
+        return True
+
+
+@activity.defn
+async def create_admin_membership(input: CreateMembershipInput) -> bool:
+    """
+    Create user-tenant membership.
+
+    Idempotent: Safe to retry - skips if membership exists.
+    """
+    activity.logger.info(
+        f"Creating membership for user {input.user_id} in tenant {input.tenant_id}"
+    )
+    result = await asyncio.to_thread(
+        _sync_create_membership, input.user_id, input.tenant_id, input.role
+    )
+    activity.logger.info(f"Membership created: {result}")
     return result

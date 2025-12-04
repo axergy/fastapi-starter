@@ -2,12 +2,12 @@
 
 from sqlmodel import select
 
-from src.app.models.tenant import User
+from src.app.models.public import User
 from src.app.repositories.base import BaseRepository
 
 
 class UserRepository(BaseRepository[User]):
-    """Repository for User entity in tenant schemas."""
+    """Repository for User entity in public schema (Lobby Pattern)."""
 
     model = User
 

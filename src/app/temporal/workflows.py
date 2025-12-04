@@ -15,6 +15,7 @@ from temporalio.common import RetryPolicy
 with workflow.unsafe.imports_passed_through():
     from src.app.models.public import TenantStatus
     from src.app.temporal.activities import (
+        CreateMembershipInput,
         CreateStripeCustomerInput,
         CreateStripeCustomerOutput,
         CreateTenantInput,
@@ -22,6 +23,7 @@ with workflow.unsafe.imports_passed_through():
         RunMigrationsInput,
         SendEmailInput,
         UpdateTenantStatusInput,
+        create_admin_membership,
         create_stripe_customer,
         create_tenant_record,
         run_tenant_migrations,
@@ -78,23 +80,27 @@ class UserOnboardingWorkflow:
 @workflow.defn
 class TenantProvisioningWorkflow:
     """
-    Provision a new tenant:
+    Provision a new tenant AND create admin membership (Lobby Pattern).
+
+    Steps:
     1. Create tenant record in public schema (status="provisioning")
-    2. Run Alembic migrations to create tenant schema + tables
-    3. Update tenant status to "ready"
+    2. Run Alembic migrations to create tenant schema (empty for now)
+    3. Create user-tenant membership with role="admin" (if user_id provided)
+    4. Update tenant status to "ready"
 
     On failure: Updates tenant status to "failed".
-    Idempotent: Safe to retry - activities handle existing tenants.
+    Idempotent: Safe to retry - activities handle existing records.
     """
 
     @workflow.run
-    async def run(self, name: str, slug: str) -> str:
+    async def run(self, name: str, slug: str, user_id: str | None = None) -> str:
         """
         Run tenant provisioning workflow.
 
         Args:
             name: Display name for the tenant
             slug: URL-safe identifier for the tenant
+            user_id: Optional user ID to create admin membership for
 
         Returns:
             tenant_id: UUID of the created/existing tenant
@@ -117,7 +123,7 @@ class TenantProvisioningWorkflow:
                 f"Tenant record created: {result.tenant_id}, schema: {result.schema_name}"
             )
 
-            # Step 2: Run migrations for tenant schema
+            # Step 2: Run migrations for tenant schema (creates empty schema)
             await workflow.execute_activity(
                 run_tenant_migrations,
                 RunMigrationsInput(schema_name=result.schema_name),
@@ -128,7 +134,20 @@ class TenantProvisioningWorkflow:
                 ),
             )
 
-            # Step 3: Mark tenant as ready
+            # Step 3: Create admin membership if user_id provided
+            if user_id:
+                await workflow.execute_activity(
+                    create_admin_membership,
+                    CreateMembershipInput(user_id=user_id, tenant_id=result.tenant_id),
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=RetryPolicy(
+                        maximum_attempts=3,
+                        initial_interval=timedelta(seconds=1),
+                    ),
+                )
+                workflow.logger.info(f"Admin membership created for user {user_id}")
+
+            # Step 4: Mark tenant as ready
             await workflow.execute_activity(
                 update_tenant_status,
                 UpdateTenantStatusInput(

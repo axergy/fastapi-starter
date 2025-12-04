@@ -1,4 +1,4 @@
-"""FastAPI dependency injection definitions."""
+"""FastAPI dependency injection definitions - Lobby Pattern."""
 
 from collections.abc import AsyncGenerator
 from typing import Annotated
@@ -8,10 +8,10 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from src.app.core.db import get_public_session, get_tenant_session
+from src.app.core.db import get_public_session
 from src.app.core.security import decode_token
-from src.app.models.public import Tenant
-from src.app.models.tenant import User
+from src.app.models.public import Tenant, TenantStatus, User, UserTenantMembership
+from src.app.repositories.membership_repository import MembershipRepository
 from src.app.repositories.tenant_repository import TenantRepository
 from src.app.repositories.token_repository import RefreshTokenRepository
 from src.app.repositories.user_repository import UserRepository
@@ -27,7 +27,7 @@ from src.app.services.user_service import UserService
 async def get_tenant_id_from_header(
     x_tenant_id: Annotated[str | None, Header()] = None,
 ) -> str:
-    """Extract tenant ID from header."""
+    """Extract tenant ID (slug) from header."""
     if not x_tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -37,11 +37,11 @@ async def get_tenant_id_from_header(
 
 
 async def get_validated_tenant(
-    tenant_id: Annotated[str, Depends(get_tenant_id_from_header)],
+    tenant_slug: Annotated[str, Depends(get_tenant_id_from_header)],
 ) -> Tenant:
-    """Validate tenant exists and is active."""
+    """Validate tenant exists, is active, and is ready."""
     async with get_public_session() as session:
-        result = await session.execute(select(Tenant).where(Tenant.slug == tenant_id))
+        result = await session.execute(select(Tenant).where(Tenant.slug == tenant_slug))
         tenant = result.scalar_one_or_none()
 
         if tenant is None:
@@ -56,39 +56,33 @@ async def get_validated_tenant(
                 detail="Tenant is inactive",
             )
 
+        if tenant.status != TenantStatus.READY.value:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Tenant is {tenant.status}",
+            )
+
         return tenant
 
 
-async def get_tenant_schema(
-    tenant: Annotated[Tenant, Depends(get_validated_tenant)],
-) -> str:
-    """Get the schema name for the validated tenant."""
-    return tenant.schema_name
+ValidatedTenant = Annotated[Tenant, Depends(get_validated_tenant)]
 
 
 # =============================================================================
-# Database Session Dependencies
+# Database Session Dependencies (ALL USE PUBLIC SCHEMA - Lobby Pattern)
 # =============================================================================
 
 
-async def get_db_session(
-    tenant_schema: Annotated[str, Depends(get_tenant_schema)],
-) -> AsyncGenerator[AsyncSession, None]:
-    """Get database session scoped to tenant."""
-    async with get_tenant_session(tenant_schema) as session:
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Get database session for public schema (Lobby Pattern)."""
+    async with get_public_session() as session:
         yield session
 
 
 DBSession = Annotated[AsyncSession, Depends(get_db_session)]
 
-
-async def get_public_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Get database session for public schema."""
-    async with get_public_session() as session:
-        yield session
-
-
-PublicDBSession = Annotated[AsyncSession, Depends(get_public_db_session)]
+# Alias for clarity
+PublicDBSession = DBSession
 
 
 # =============================================================================
@@ -97,22 +91,28 @@ PublicDBSession = Annotated[AsyncSession, Depends(get_public_db_session)]
 
 
 def get_user_repository(session: DBSession) -> UserRepository:
-    """Get user repository with tenant-scoped session."""
+    """Get user repository with public schema session."""
     return UserRepository(session)
 
 
 def get_token_repository(session: DBSession) -> RefreshTokenRepository:
-    """Get refresh token repository with tenant-scoped session."""
+    """Get refresh token repository with public schema session."""
     return RefreshTokenRepository(session)
 
 
-def get_tenant_repository(session: PublicDBSession) -> TenantRepository:
+def get_membership_repository(session: DBSession) -> MembershipRepository:
+    """Get membership repository with public schema session."""
+    return MembershipRepository(session)
+
+
+def get_tenant_repository(session: DBSession) -> TenantRepository:
     """Get tenant repository with public schema session."""
     return TenantRepository(session)
 
 
 UserRepo = Annotated[UserRepository, Depends(get_user_repository)]
 TokenRepo = Annotated[RefreshTokenRepository, Depends(get_token_repository)]
+MembershipRepo = Annotated[MembershipRepository, Depends(get_membership_repository)]
 TenantRepo = Annotated[TenantRepository, Depends(get_tenant_repository)]
 
 
@@ -129,14 +129,21 @@ def get_user_service(user_repo: UserRepo, session: DBSession) -> UserService:
 def get_auth_service(
     user_repo: UserRepo,
     token_repo: TokenRepo,
+    membership_repo: MembershipRepo,
     session: DBSession,
-    tenant_id: Annotated[str, Depends(get_tenant_id_from_header)],
+    tenant: ValidatedTenant,
 ) -> AuthService:
     """Get auth service with repositories and tenant context."""
-    return AuthService(user_repo, token_repo, session, tenant_id)
+    return AuthService(
+        user_repo,
+        token_repo,
+        membership_repo,
+        session,
+        tenant.id,  # Pass UUID, not slug
+    )
 
 
-def get_tenant_service(tenant_repo: TenantRepo, session: PublicDBSession) -> TenantService:
+def get_tenant_service(tenant_repo: TenantRepo, session: DBSession) -> TenantService:
     """Get tenant service."""
     return TenantService(tenant_repo, session)
 
@@ -153,9 +160,13 @@ TenantServiceDep = Annotated[TenantService, Depends(get_tenant_service)]
 
 async def get_current_user(
     session: DBSession,
+    tenant: ValidatedTenant,
     authorization: Annotated[str | None, Header()] = None,
 ) -> User:
-    """Validate access token and return current user."""
+    """Validate access token and return current user.
+
+    IMPORTANT: Validates that JWT tenant_id matches the X-Tenant-ID header's tenant.
+    """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -178,12 +189,30 @@ async def get_current_user(
         )
 
     user_id = payload.get("sub")
-    if not user_id:
+    token_tenant_id = payload.get("tenant_id")
+
+    if not user_id or not token_tenant_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
 
+    # CRITICAL: Validate JWT tenant_id matches X-Tenant-ID header's tenant
+    try:
+        token_tenant_uuid = UUID(token_tenant_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid tenant_id in token",
+        ) from e
+
+    if token_tenant_uuid != tenant.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token tenant does not match request tenant",
+        )
+
+    # Get user from public schema
     result = await session.execute(select(User).where(User.id == UUID(user_id)))
     user = result.scalar_one_or_none()
 
@@ -191,6 +220,22 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
+        )
+
+    # Verify user has active membership in this tenant
+    membership_result = await session.execute(
+        select(UserTenantMembership).where(
+            UserTenantMembership.user_id == user.id,
+            UserTenantMembership.tenant_id == tenant.id,
+            UserTenantMembership.is_active == True,  # noqa: E712
+        )
+    )
+    membership = membership_result.scalar_one_or_none()
+
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User does not have access to this tenant",
         )
 
     return user

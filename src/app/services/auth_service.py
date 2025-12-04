@@ -1,6 +1,7 @@
-"""Authentication service - handles login, token refresh, registration."""
+"""Authentication service - handles login, token refresh (Lobby Pattern)."""
 
 from hashlib import sha256
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,10 +9,10 @@ from src.app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    hash_password,
     verify_password,
 )
-from src.app.models.tenant import RefreshToken, User
+from src.app.models.public import RefreshToken
+from src.app.repositories.membership_repository import MembershipRepository
 from src.app.repositories.token_repository import RefreshTokenRepository
 from src.app.repositories.user_repository import UserRepository
 from src.app.schemas.auth import LoginResponse
@@ -25,39 +26,65 @@ class TokenType:
 
 
 class AuthService:
-    """Authentication service - handles login, token refresh, registration."""
+    """Authentication service - handles login, token refresh.
+
+    Lobby Pattern: Users are centralized in public schema.
+    Login validates membership in the requested tenant.
+    """
 
     def __init__(
         self,
         user_repo: UserRepository,
         token_repo: RefreshTokenRepository,
+        membership_repo: MembershipRepository,
         session: AsyncSession,
-        tenant_id: str,
+        tenant_id: UUID,
     ):
         self.user_repo = user_repo
         self.token_repo = token_repo
+        self.membership_repo = membership_repo
         self.session = session
         self.tenant_id = tenant_id
 
     async def authenticate(self, email: str, password: str) -> LoginResponse | None:
-        """Authenticate user and return tokens. Returns None if authentication fails."""
-        user = await self.user_repo.get_by_email(email)
+        """Authenticate user and return tokens.
 
+        Validates:
+        1. User exists in public.users
+        2. Password is correct
+        3. User is active
+        4. User has active membership in the tenant
+
+        Returns None if authentication fails.
+        """
+        # 1. Get user from public schema
+        user = await self.user_repo.get_by_email(email)
         if user is None:
             return None
 
+        # 2. Verify password
         if not verify_password(password, user.hashed_password):
             return None
 
+        # 3. Check user is active
         if not user.is_active:
             return None
 
+        # 4. Verify membership in tenant
+        if not await self.membership_repo.user_has_active_membership(
+            user.id, self.tenant_id
+        ):
+            return None
+
+        # Create tokens with tenant_id (UUID)
         access_token = create_access_token(user.id, self.tenant_id)
         refresh_token, expires_at = create_refresh_token(user.id, self.tenant_id)
 
+        # Store refresh token in public schema with tenant_id
         token_hash = sha256(refresh_token.encode()).hexdigest()
         db_token = RefreshToken(
             user_id=user.id,
+            tenant_id=self.tenant_id,
             token_hash=token_hash,
             expires_at=expires_at,
         )
@@ -79,11 +106,21 @@ class AuthService:
             return None
 
         user_id = payload.get("sub")
-        if not user_id:
+        token_tenant_id = payload.get("tenant_id")
+        if not user_id or not token_tenant_id:
+            return None
+
+        # Verify token tenant matches current tenant
+        try:
+            if UUID(token_tenant_id) != self.tenant_id:
+                return None
+        except ValueError:
             return None
 
         token_hash = sha256(refresh_token.encode()).hexdigest()
-        db_token = await self.token_repo.get_valid_by_hash(token_hash)
+        db_token = await self.token_repo.get_valid_by_hash_and_tenant(
+            token_hash, self.tenant_id
+        )
 
         if db_token is None:
             return None
@@ -101,24 +138,3 @@ class AuthService:
         db_token.revoked = True
         await self.session.commit()
         return True
-
-    async def register_user(
-        self,
-        email: str,
-        password: str,
-        full_name: str,
-    ) -> User | None:
-        """Register new user. Returns None if email already exists."""
-        if await self.user_repo.exists_by_email(email):
-            return None
-
-        user = User(
-            email=email,
-            hashed_password=hash_password(password),
-            full_name=full_name,
-        )
-        self.user_repo.add(user)
-        await self.session.commit()
-        await self.session.refresh(user)
-
-        return user

@@ -1,29 +1,44 @@
-"""Authentication endpoints."""
+"""Authentication endpoints - Lobby Pattern."""
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
 
-from src.app.api.dependencies import AuthServiceDep
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from src.app.api.dependencies import AuthServiceDep, DBSession, UserRepo
 from src.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     RefreshRequest,
     RefreshResponse,
     RegisterRequest,
+    RegisterResponse,
 )
 from src.app.schemas.user import UserRead
+from src.app.services.registration_service import RegistrationService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def get_registration_service(user_repo: UserRepo, session: DBSession) -> RegistrationService:
+    """Create registration service (no tenant context required)."""
+    return RegistrationService(user_repo, session)
+
+
+RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest, service: AuthServiceDep) -> LoginResponse:
-    """Authenticate user and return tokens."""
+    """Authenticate user and return tokens.
+
+    Requires X-Tenant-ID header. User must have membership in the tenant.
+    """
     result = await service.authenticate(request.email, request.password)
 
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail="Invalid credentials or no access to tenant",
         )
 
     return result
@@ -43,22 +58,35 @@ async def refresh(request: RefreshRequest, service: AuthServiceDep) -> RefreshRe
     return RefreshResponse(access_token=access_token)
 
 
-@router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-async def register(request: RegisterRequest, service: AuthServiceDep) -> UserRead:
-    """Register new user."""
-    user = await service.register_user(
-        email=request.email,
-        password=request.password,
-        full_name=request.full_name,
-    )
+@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_202_ACCEPTED)
+async def register(
+    request: RegisterRequest,
+    service: RegistrationServiceDep,
+) -> RegisterResponse:
+    """Register new user AND create a new tenant.
 
-    if user is None:
+    Does NOT require X-Tenant-ID header.
+    Returns user info and workflow_id to poll for tenant status.
+    """
+    try:
+        user, workflow_id = await service.register(
+            email=request.email,
+            password=request.password,
+            full_name=request.full_name,
+            tenant_name=request.tenant_name,
+            tenant_slug=request.tenant_slug,
+        )
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
-        )
+            detail=str(e),
+        ) from e
 
-    return UserRead.model_validate(user)
+    return RegisterResponse(
+        user=UserRead.model_validate(user),
+        workflow_id=workflow_id,
+        tenant_slug=request.tenant_slug,
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

@@ -11,6 +11,7 @@ from temporalio.worker import Worker
 
 from src.app.core.config import get_settings
 from src.app.temporal.activities import (
+    create_admin_membership,
     create_stripe_customer,
     create_tenant_record,
     dispose_sync_engine,
@@ -31,6 +32,7 @@ async def main() -> None:
         task_queue=settings.temporal_task_queue,
         workflows=[UserOnboardingWorkflow, TenantProvisioningWorkflow],
         activities=[
+            create_admin_membership,
             create_stripe_customer,
             send_welcome_email,
             create_tenant_record,

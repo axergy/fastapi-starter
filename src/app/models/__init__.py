@@ -1,4 +1,19 @@
-from src.app.models.public import Tenant
-from src.app.models.tenant import RefreshToken, User
+"""Model exports - Lobby Pattern (all models in public schema)."""
 
-__all__ = ["Tenant", "User", "RefreshToken"]
+from src.app.models.public import (
+    MembershipRole,
+    RefreshToken,
+    Tenant,
+    TenantStatus,
+    User,
+    UserTenantMembership,
+)
+
+__all__ = [
+    "MembershipRole",
+    "RefreshToken",
+    "Tenant",
+    "TenantStatus",
+    "User",
+    "UserTenantMembership",
+]
