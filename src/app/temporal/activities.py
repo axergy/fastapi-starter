@@ -7,6 +7,7 @@ Activities should be:
 3. Side-effect aware - External calls go here, not in workflows
 """
 
+import asyncio
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -114,15 +115,8 @@ def dispose_sync_engine() -> None:
         _sync_engine = None
 
 
-@activity.defn
-async def create_tenant_record(input: CreateTenantInput) -> CreateTenantOutput:
-    """
-    Create tenant record in public schema.
-
-    Idempotent: Returns existing tenant if slug already exists.
-    """
-    activity.logger.info(f"Creating tenant record for slug: {input.slug}")
-
+def _sync_create_tenant_record(input: CreateTenantInput) -> CreateTenantOutput:
+    """Synchronous tenant record creation logic."""
     engine = get_sync_engine()
     with Session(engine) as session:
         # Check if tenant already exists (idempotency)
@@ -130,7 +124,6 @@ async def create_tenant_record(input: CreateTenantInput) -> CreateTenantOutput:
         existing = session.scalars(stmt).first()
 
         if existing:
-            activity.logger.info(f"Tenant {input.slug} already exists, returning existing")
             return CreateTenantOutput(
                 tenant_id=str(existing.id),
                 schema_name=existing.schema_name,
@@ -142,11 +135,33 @@ async def create_tenant_record(input: CreateTenantInput) -> CreateTenantOutput:
         session.commit()
         session.refresh(tenant)
 
-        activity.logger.info(f"Created tenant {tenant.id} with schema {tenant.schema_name}")
         return CreateTenantOutput(
             tenant_id=str(tenant.id),
             schema_name=tenant.schema_name,
         )
+
+
+@activity.defn
+async def create_tenant_record(input: CreateTenantInput) -> CreateTenantOutput:
+    """
+    Create tenant record in public schema.
+
+    Idempotent: Returns existing tenant if slug already exists.
+    """
+    activity.logger.info(f"Creating tenant record for slug: {input.slug}")
+    result = await asyncio.to_thread(_sync_create_tenant_record, input)
+    activity.logger.info(f"Tenant record created: {result.tenant_id}")
+    return result
+
+
+def _sync_run_tenant_migrations(schema_name: str) -> bool:
+    """Synchronous migration logic."""
+    # Validate schema name to prevent injection
+    if not schema_name.replace("_", "").isalnum():
+        raise ValueError(f"Invalid schema name: {schema_name}")
+
+    run_migrations_sync(schema_name)
+    return True
 
 
 @activity.defn
@@ -157,13 +172,7 @@ async def run_tenant_migrations(input: RunMigrationsInput) -> bool:
     Idempotent: Alembic tracks migration state per-schema.
     """
     activity.logger.info(f"Running migrations for schema: {input.schema_name}")
-
-    # Validate schema name to prevent injection
-    if not input.schema_name.replace("_", "").isalnum():
-        raise ValueError(f"Invalid schema name: {input.schema_name}")
-
-    run_migrations_sync(input.schema_name)
-
+    await asyncio.to_thread(_sync_run_tenant_migrations, input.schema_name)
     activity.logger.info(f"Migrations complete for schema: {input.schema_name}")
     return True
 
@@ -174,6 +183,22 @@ class UpdateTenantStatusInput:
     status: str  # "provisioning", "ready", "failed"
 
 
+def _sync_update_tenant_status(tenant_id: str, status: str) -> bool:
+    """Synchronous tenant status update logic."""
+    engine = get_sync_engine()
+    with Session(engine) as session:
+        tenant_uuid = UUID(tenant_id)
+        stmt = select(Tenant).where(Tenant.id == tenant_uuid)
+        tenant = session.scalars(stmt).first()
+
+        if not tenant:
+            return False
+
+        tenant.status = status
+        session.commit()
+        return True
+
+
 @activity.defn
 async def update_tenant_status(input: UpdateTenantStatusInput) -> bool:
     """
@@ -182,20 +207,11 @@ async def update_tenant_status(input: UpdateTenantStatusInput) -> bool:
     Idempotent: Safe to retry - just sets the status value.
     """
     activity.logger.info(f"Updating tenant {input.tenant_id} status to: {input.status}")
+    result = await asyncio.to_thread(_sync_update_tenant_status, input.tenant_id, input.status)
 
-    engine = get_sync_engine()
-    with Session(engine) as session:
-        # Convert string tenant_id to UUID for comparison
-        tenant_uuid = UUID(input.tenant_id)
-        stmt = select(Tenant).where(Tenant.id == tenant_uuid)
-        tenant = session.scalars(stmt).first()
-
-        if not tenant:
-            activity.logger.error(f"Tenant {input.tenant_id} not found")
-            return False
-
-        tenant.status = input.status
-        session.commit()
-
+    if not result:
+        activity.logger.error(f"Tenant {input.tenant_id} not found")
+    else:
         activity.logger.info(f"Tenant {input.tenant_id} status updated to {input.status}")
-        return True
+
+    return result
