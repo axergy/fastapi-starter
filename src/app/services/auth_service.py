@@ -2,6 +2,8 @@
 
 from hashlib import sha256
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -29,10 +31,12 @@ class AuthService:
         self,
         user_repo: UserRepository,
         token_repo: RefreshTokenRepository,
+        session: AsyncSession,
         tenant_id: str,
     ):
         self.user_repo = user_repo
         self.token_repo = token_repo
+        self.session = session
         self.tenant_id = tenant_id
 
     async def authenticate(self, email: str, password: str) -> LoginResponse | None:
@@ -57,8 +61,8 @@ class AuthService:
             token_hash=token_hash,
             expires_at=expires_at,
         )
-        await self.token_repo.add(db_token)
-        await self.token_repo.commit()
+        self.token_repo.add(db_token)
+        await self.session.commit()
 
         return LoginResponse(
             access_token=access_token,
@@ -95,7 +99,7 @@ class AuthService:
             return False
 
         db_token.revoked = True
-        await self.token_repo.commit()
+        await self.session.commit()
         return True
 
     async def register_user(
@@ -113,7 +117,8 @@ class AuthService:
             hashed_password=hash_password(password),
             full_name=full_name,
         )
-        await self.user_repo.add(user)
-        await self.user_repo.commit()
+        self.user_repo.add(user)
+        await self.session.commit()
+        await self.session.refresh(user)
 
         return user

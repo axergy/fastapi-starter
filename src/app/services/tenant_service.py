@@ -1,5 +1,7 @@
 """Tenant provisioning service."""
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.app.core.config import get_settings
 from src.app.models.public import Tenant
 from src.app.repositories.tenant_repository import TenantRepository
@@ -10,8 +12,9 @@ from src.app.temporal.workflows import TenantProvisioningWorkflow
 class TenantService:
     """Tenant provisioning service - business logic only."""
 
-    def __init__(self, tenant_repo: TenantRepository):
+    def __init__(self, tenant_repo: TenantRepository, session: AsyncSession):
         self.tenant_repo = tenant_repo
+        self.session = session
 
     @staticmethod
     def get_workflow_id(slug: str) -> str:
@@ -61,5 +64,6 @@ class TenantService:
     async def deactivate_tenant(self, tenant: Tenant) -> Tenant:
         """Deactivate a tenant."""
         tenant.is_active = False
-        await self.tenant_repo.commit()
-        return await self.tenant_repo.refresh(tenant)
+        await self.session.commit()
+        await self.session.refresh(tenant)
+        return tenant

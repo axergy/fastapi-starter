@@ -3,6 +3,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.app.core.security import hash_password
 from src.app.models.tenant import User
 from src.app.repositories.user_repository import UserRepository
@@ -12,8 +14,9 @@ from src.app.schemas.user import UserUpdate
 class UserService:
     """User management service - business logic only."""
 
-    def __init__(self, user_repo: UserRepository):
+    def __init__(self, user_repo: UserRepository, session: AsyncSession):
         self.user_repo = user_repo
+        self.session = session
 
     async def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID."""
@@ -34,12 +37,14 @@ class UserService:
             setattr(user, field, value)
 
         user.updated_at = datetime.now(UTC)
-        await self.user_repo.commit()
-        return await self.user_repo.refresh(user)
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
 
     async def deactivate(self, user: User) -> User:
         """Deactivate user account."""
         user.is_active = False
         user.updated_at = datetime.now(UTC)
-        await self.user_repo.commit()
-        return await self.user_repo.refresh(user)
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user

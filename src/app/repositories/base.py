@@ -7,7 +7,11 @@ from sqlmodel import SQLModel, select
 
 
 class BaseRepository[ModelType: SQLModel]:
-    """Base repository providing common database operations."""
+    """Base repository providing common database operations.
+
+    Repositories handle data access only. Transaction control (commit)
+    should be done in the service layer.
+    """
 
     model: type[ModelType]
 
@@ -19,18 +23,6 @@ class BaseRepository[ModelType: SQLModel]:
         result = await self.session.execute(select(self.model).where(self.model.id == id))
         return result.scalar_one_or_none()
 
-    async def add(self, entity: ModelType) -> ModelType:
-        """Add a new entity to the session."""
+    def add(self, entity: ModelType) -> None:
+        """Add entity to session (no flush/commit)."""
         self.session.add(entity)
-        await self.session.flush()
-        await self.session.refresh(entity)
-        return entity
-
-    async def commit(self) -> None:
-        """Commit the current transaction."""
-        await self.session.commit()
-
-    async def refresh(self, entity: ModelType) -> ModelType:
-        """Refresh entity from database."""
-        await self.session.refresh(entity)
-        return entity

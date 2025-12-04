@@ -121,23 +121,24 @@ TenantRepo = Annotated[TenantRepository, Depends(get_tenant_repository)]
 # =============================================================================
 
 
-def get_user_service(user_repo: UserRepo) -> UserService:
+def get_user_service(user_repo: UserRepo, session: DBSession) -> UserService:
     """Get user service."""
-    return UserService(user_repo)
+    return UserService(user_repo, session)
 
 
 def get_auth_service(
     user_repo: UserRepo,
     token_repo: TokenRepo,
+    session: DBSession,
     tenant_id: Annotated[str, Depends(get_tenant_id_from_header)],
 ) -> AuthService:
     """Get auth service with repositories and tenant context."""
-    return AuthService(user_repo, token_repo, tenant_id)
+    return AuthService(user_repo, token_repo, session, tenant_id)
 
 
-def get_tenant_service(tenant_repo: TenantRepo) -> TenantService:
+def get_tenant_service(tenant_repo: TenantRepo, session: PublicDBSession) -> TenantService:
     """Get tenant service."""
-    return TenantService(tenant_repo)
+    return TenantService(tenant_repo, session)
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
