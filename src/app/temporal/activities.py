@@ -20,7 +20,7 @@ from temporalio import activity
 from src.app.core.config import get_settings
 from src.app.core.migrations import run_migrations_sync
 from src.app.models.base import utc_now
-from src.app.models.public import MembershipRole, Tenant, UserTenantMembership
+from src.app.models.public import MembershipRole, Tenant, TenantStatus, UserTenantMembership
 
 # Singleton sync engine for activities
 _sync_engine: Engine | None = None
@@ -82,13 +82,12 @@ async def create_stripe_customer(
 
 
 @dataclass
-class CreateTenantInput:
-    name: str
-    slug: str
+class GetTenantInput:
+    tenant_id: str
 
 
 @dataclass
-class CreateTenantOutput:
+class GetTenantOutput:
     tenant_id: str
     schema_name: str
 
@@ -117,42 +116,33 @@ def dispose_sync_engine() -> None:
         _sync_engine = None
 
 
-def _sync_create_tenant_record(input: CreateTenantInput) -> CreateTenantOutput:
-    """Synchronous tenant record creation logic."""
+def _sync_get_tenant_info(tenant_id: str) -> GetTenantOutput:
+    """Synchronous tenant info retrieval logic."""
     engine = get_sync_engine()
     with Session(engine) as session:
-        # Check if tenant already exists (idempotency)
-        stmt = select(Tenant).where(Tenant.slug == input.slug)
-        existing = session.scalars(stmt).first()
+        tenant_uuid = UUID(tenant_id)
+        stmt = select(Tenant).where(Tenant.id == tenant_uuid)
+        tenant = session.scalars(stmt).first()
 
-        if existing:
-            return CreateTenantOutput(
-                tenant_id=str(existing.id),
-                schema_name=existing.schema_name,
-            )
+        if not tenant:
+            raise ValueError(f"Tenant {tenant_id} not found")
 
-        # Create new tenant
-        tenant = Tenant(name=input.name, slug=input.slug)
-        session.add(tenant)
-        session.commit()
-        session.refresh(tenant)
-
-        return CreateTenantOutput(
+        return GetTenantOutput(
             tenant_id=str(tenant.id),
             schema_name=tenant.schema_name,
         )
 
 
 @activity.defn
-async def create_tenant_record(input: CreateTenantInput) -> CreateTenantOutput:
+async def get_tenant_info(input: GetTenantInput) -> GetTenantOutput:
     """
-    Create tenant record in public schema.
+    Get tenant information (schema_name) for an existing tenant.
 
-    Idempotent: Returns existing tenant if slug already exists.
+    Idempotent: Safe to retry - just retrieves tenant data.
     """
-    activity.logger.info(f"Creating tenant record for slug: {input.slug}")
-    result = await asyncio.to_thread(_sync_create_tenant_record, input)
-    activity.logger.info(f"Tenant record created: {result.tenant_id}")
+    activity.logger.info(f"Getting tenant info for: {input.tenant_id}")
+    result = await asyncio.to_thread(_sync_get_tenant_info, input.tenant_id)
+    activity.logger.info(f"Tenant info retrieved: {result.tenant_id}, schema: {result.schema_name}")
     return result
 
 
@@ -187,6 +177,12 @@ class UpdateTenantStatusInput:
 
 def _sync_update_tenant_status(tenant_id: str, status: str) -> bool:
     """Synchronous tenant status update logic."""
+    # Validate status is a valid enum value
+    try:
+        TenantStatus(status)
+    except ValueError as e:
+        raise ValueError(f"Invalid tenant status: {status}") from e
+
     engine = get_sync_engine()
     with Session(engine) as session:
         tenant_uuid = UUID(tenant_id)

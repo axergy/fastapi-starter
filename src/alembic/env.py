@@ -6,6 +6,7 @@ from sqlmodel import SQLModel
 
 from alembic import context
 from src.app.core.config import get_settings
+from src.app.core.validators import validate_schema_name
 
 # Import all models for metadata
 from src.app.models import RefreshToken, Tenant, User  # noqa: F401
@@ -42,9 +43,17 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection, schema: str | None = None) -> None:
     """Run migrations for a specific schema."""
     if schema:
+        # Validate schema name before any SQL execution
+        validate_schema_name(schema)
+
+        # Use quote_ident to properly quote the schema name
+        quoted_schema = connection.execute(
+            text("SELECT quote_ident(:schema)").bindparams(schema=schema)
+        ).scalar()
+
         # Create schema and set search_path for tenant migrations
-        connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
-        connection.execute(text(f"SET search_path TO {schema}"))
+        connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {quoted_schema}"))
+        connection.execute(text(f"SET search_path TO {quoted_schema}"))
         connection.commit()
         context.configure(
             connection=connection,

@@ -18,14 +18,11 @@ with workflow.unsafe.imports_passed_through():
         CreateMembershipInput,
         CreateStripeCustomerInput,
         CreateStripeCustomerOutput,
-        CreateTenantInput,
-        CreateTenantOutput,
         RunMigrationsInput,
         SendEmailInput,
         UpdateTenantStatusInput,
         create_admin_membership,
         create_stripe_customer,
-        create_tenant_record,
         run_tenant_migrations,
         send_welcome_email,
         update_tenant_status,
@@ -83,7 +80,7 @@ class TenantProvisioningWorkflow:
     Provision a new tenant AND create admin membership (Lobby Pattern).
 
     Steps:
-    1. Create tenant record in public schema (status="provisioning")
+    1. Get tenant record and schema name (tenant already exists from service layer)
     2. Run Alembic migrations to create tenant schema (empty for now)
     3. Create user-tenant membership with role="admin" (if user_id provided)
     4. Update tenant status to "ready"
@@ -93,25 +90,30 @@ class TenantProvisioningWorkflow:
     """
 
     @workflow.run
-    async def run(self, name: str, slug: str, user_id: str | None = None) -> str:
+    async def run(self, tenant_id: str, user_id: str | None = None) -> str:
         """
         Run tenant provisioning workflow.
 
         Args:
-            name: Display name for the tenant
-            slug: URL-safe identifier for the tenant
+            tenant_id: UUID of the existing tenant (created by service layer)
             user_id: Optional user ID to create admin membership for
 
         Returns:
-            tenant_id: UUID of the created/existing tenant
+            tenant_id: UUID of the tenant
         """
-        result: CreateTenantOutput | None = None
+        schema_name: str | None = None
 
         try:
-            # Step 1: Create tenant record (status="provisioning" by default)
-            result = await workflow.execute_activity(
-                create_tenant_record,
-                CreateTenantInput(name=name, slug=slug),
+            # Step 1: Get tenant info (schema_name) for migrations
+            from src.app.temporal.activities import (
+                GetTenantInput,
+                GetTenantOutput,
+                get_tenant_info,
+            )
+
+            tenant_info: GetTenantOutput = await workflow.execute_activity(
+                get_tenant_info,
+                GetTenantInput(tenant_id=tenant_id),
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=RetryPolicy(
                     maximum_attempts=3,
@@ -119,14 +121,13 @@ class TenantProvisioningWorkflow:
                 ),
             )
 
-            workflow.logger.info(
-                f"Tenant record created: {result.tenant_id}, schema: {result.schema_name}"
-            )
+            schema_name = tenant_info.schema_name
+            workflow.logger.info(f"Processing tenant: {tenant_id}, schema: {schema_name}")
 
             # Step 2: Run migrations for tenant schema (creates empty schema)
             await workflow.execute_activity(
                 run_tenant_migrations,
-                RunMigrationsInput(schema_name=result.schema_name),
+                RunMigrationsInput(schema_name=schema_name),
                 start_to_close_timeout=timedelta(minutes=5),
                 retry_policy=RetryPolicy(
                     maximum_attempts=3,
@@ -138,7 +139,7 @@ class TenantProvisioningWorkflow:
             if user_id:
                 await workflow.execute_activity(
                     create_admin_membership,
-                    CreateMembershipInput(user_id=user_id, tenant_id=result.tenant_id),
+                    CreateMembershipInput(user_id=user_id, tenant_id=tenant_id),
                     start_to_close_timeout=timedelta(seconds=30),
                     retry_policy=RetryPolicy(
                         maximum_attempts=3,
@@ -150,9 +151,7 @@ class TenantProvisioningWorkflow:
             # Step 4: Mark tenant as ready
             await workflow.execute_activity(
                 update_tenant_status,
-                UpdateTenantStatusInput(
-                    tenant_id=result.tenant_id, status=TenantStatus.READY.value
-                ),
+                UpdateTenantStatusInput(tenant_id=tenant_id, status=TenantStatus.READY.value),
                 start_to_close_timeout=timedelta(seconds=10),
                 retry_policy=RetryPolicy(
                     maximum_attempts=3,
@@ -160,22 +159,19 @@ class TenantProvisioningWorkflow:
                 ),
             )
 
-            workflow.logger.info(f"Tenant provisioning complete: {result.tenant_id}")
-            return result.tenant_id
+            workflow.logger.info(f"Tenant provisioning complete: {tenant_id}")
+            return tenant_id
 
         except Exception as e:
-            # Mark tenant as failed if we have a tenant_id
-            if result is not None:
-                workflow.logger.error(f"Provisioning failed, marking tenant as failed: {e}")
-                await workflow.execute_activity(
-                    update_tenant_status,
-                    UpdateTenantStatusInput(
-                        tenant_id=result.tenant_id, status=TenantStatus.FAILED.value
-                    ),
-                    start_to_close_timeout=timedelta(seconds=10),
-                    retry_policy=RetryPolicy(
-                        maximum_attempts=3,
-                        initial_interval=timedelta(seconds=1),
-                    ),
-                )
+            # Mark tenant as failed
+            workflow.logger.error(f"Provisioning failed, marking tenant as failed: {e}")
+            await workflow.execute_activity(
+                update_tenant_status,
+                UpdateTenantStatusInput(tenant_id=tenant_id, status=TenantStatus.FAILED.value),
+                start_to_close_timeout=timedelta(seconds=10),
+                retry_policy=RetryPolicy(
+                    maximum_attempts=3,
+                    initial_interval=timedelta(seconds=1),
+                ),
+            )
             raise

@@ -57,44 +57,48 @@ class AuthService:
 
         Returns None if authentication fails.
         """
-        # 1. Get user from public schema
-        user = await self.user_repo.get_by_email(email)
-        if user is None:
-            return None
+        try:
+            # 1. Get user from public schema
+            user = await self.user_repo.get_by_email(email)
+            if user is None:
+                return None
 
-        # 2. Verify password
-        if not verify_password(password, user.hashed_password):
-            return None
+            # 2. Verify password
+            if not verify_password(password, user.hashed_password):
+                return None
 
-        # 3. Check user is active
-        if not user.is_active:
-            return None
+            # 3. Check user is active
+            if not user.is_active:
+                return None
 
-        # 4. Verify membership in tenant
-        if not await self.membership_repo.user_has_active_membership(
-            user.id, self.tenant_id
-        ):
-            return None
+            # 4. Verify membership in tenant
+            if not await self.membership_repo.user_has_active_membership(
+                user.id, self.tenant_id
+            ):
+                return None
 
-        # Create tokens with tenant_id (UUID)
-        access_token = create_access_token(user.id, self.tenant_id)
-        refresh_token, expires_at = create_refresh_token(user.id, self.tenant_id)
+            # Create tokens with tenant_id (UUID)
+            access_token = create_access_token(user.id, self.tenant_id)
+            refresh_token, expires_at = create_refresh_token(user.id, self.tenant_id)
 
-        # Store refresh token in public schema with tenant_id
-        token_hash = sha256(refresh_token.encode()).hexdigest()
-        db_token = RefreshToken(
-            user_id=user.id,
-            tenant_id=self.tenant_id,
-            token_hash=token_hash,
-            expires_at=expires_at,
-        )
-        self.token_repo.add(db_token)
-        await self.session.commit()
+            # Store refresh token in public schema with tenant_id
+            token_hash = sha256(refresh_token.encode()).hexdigest()
+            db_token = RefreshToken(
+                user_id=user.id,
+                tenant_id=self.tenant_id,
+                token_hash=token_hash,
+                expires_at=expires_at,
+            )
+            self.token_repo.add(db_token)
+            await self.session.commit()
 
-        return LoginResponse(
-            access_token=access_token,
-            refresh_token=refresh_token,
-        )
+            return LoginResponse(
+                access_token=access_token,
+                refresh_token=refresh_token,
+            )
+        except Exception:
+            await self.session.rollback()
+            raise
 
     async def refresh_access_token(self, refresh_token: str) -> str | None:
         """Validate refresh token and return new access token."""
@@ -129,12 +133,16 @@ class AuthService:
 
     async def revoke_refresh_token(self, refresh_token: str) -> bool:
         """Revoke a refresh token. Returns True if successful."""
-        token_hash = sha256(refresh_token.encode()).hexdigest()
-        db_token = await self.token_repo.get_by_hash(token_hash)
+        try:
+            token_hash = sha256(refresh_token.encode()).hexdigest()
+            db_token = await self.token_repo.get_by_hash(token_hash)
 
-        if db_token is None:
-            return False
+            if db_token is None:
+                return False
 
-        db_token.revoked = True
-        await self.session.commit()
-        return True
+            db_token.revoked = True
+            await self.session.commit()
+            return True
+        except Exception:
+            await self.session.rollback()
+            raise

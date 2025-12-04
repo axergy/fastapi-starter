@@ -1,8 +1,10 @@
 """Repository for Tenant entity."""
 
+from uuid import UUID
+
 from sqlmodel import select
 
-from src.app.models.public import Tenant
+from src.app.models.public import Tenant, UserTenantMembership
 from src.app.repositories.base import BaseRepository
 
 
@@ -26,5 +28,19 @@ class TenantRepository(BaseRepository[Tenant]):
         query = select(Tenant)
         if active_only:
             query = query.where(Tenant.is_active == True)  # noqa: E712
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
+    async def list_by_user_membership(self, user_id: UUID) -> list[Tenant]:
+        """List tenants where user has active membership."""
+        query = (
+            select(Tenant)
+            .join(UserTenantMembership, Tenant.id == UserTenantMembership.tenant_id)
+            .where(
+                UserTenantMembership.user_id == user_id,
+                UserTenantMembership.is_active == True,  # noqa: E712
+                Tenant.is_active == True,  # noqa: E712
+            )
+        )
         result = await self.session.execute(query)
         return list(result.scalars().all())

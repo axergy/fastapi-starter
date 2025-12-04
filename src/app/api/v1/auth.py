@@ -1,8 +1,10 @@
 """Authentication endpoints - Lobby Pattern."""
 
 from fastapi import APIRouter, HTTPException, status
+from starlette.requests import Request
 
 from src.app.api.dependencies import AuthServiceDep, RegistrationServiceDep
+from src.app.core.rate_limit import limiter
 from src.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -16,8 +18,30 @@ from src.app.schemas.user import UserRead
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest, service: AuthServiceDep) -> LoginResponse:
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    responses={
+        200: {
+            "description": "Successful authentication",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer"
+                    }
+                }
+            }
+        },
+        401: {"description": "Invalid credentials"},
+        403: {"description": "User not member of tenant"}
+    }
+)
+@limiter.limit("5/minute")
+async def login(
+    http_request: Request, request: LoginRequest, service: AuthServiceDep
+) -> LoginResponse:
     """Authenticate user and return tokens.
 
     Requires X-Tenant-ID header. User must have membership in the tenant.
@@ -33,7 +57,23 @@ async def login(request: LoginRequest, service: AuthServiceDep) -> LoginResponse
     return result
 
 
-@router.post("/refresh", response_model=RefreshResponse)
+@router.post(
+    "/refresh",
+    response_model=RefreshResponse,
+    responses={
+        200: {
+            "description": "Token refreshed successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                }
+            }
+        },
+        401: {"description": "Invalid or expired refresh token"}
+    }
+)
 async def refresh(request: RefreshRequest, service: AuthServiceDep) -> RefreshResponse:
     """Refresh access token using refresh token."""
     access_token = await service.refresh_access_token(request.refresh_token)
@@ -47,8 +87,35 @@ async def refresh(request: RefreshRequest, service: AuthServiceDep) -> RefreshRe
     return RefreshResponse(access_token=access_token)
 
 
-@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/register",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        202: {
+            "description": "Registration initiated",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "user": {
+                            "id": "550e8400-e29b-41d4-a716-446655440000",
+                            "email": "user@example.com",
+                            "full_name": "John Doe",
+                            "is_active": True,
+                            "is_superuser": False
+                        },
+                        "workflow_id": "tenant-provisioning-acme-corp",
+                        "tenant_slug": "acme-corp"
+                    }
+                }
+            }
+        },
+        409: {"description": "Validation error or tenant slug already exists"}
+    }
+)
+@limiter.limit("3/hour")
 async def register(
+    http_request: Request,
     request: RegisterRequest,
     service: RegistrationServiceDep,
 ) -> RegisterResponse:

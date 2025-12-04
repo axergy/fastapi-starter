@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.core.config import get_settings
 from src.app.core.security import hash_password
-from src.app.models.public import User
+from src.app.models.public import Tenant, TenantStatus, User
 from src.app.repositories.user_repository import UserRepository
 from src.app.temporal.client import get_temporal_client
 from src.app.temporal.workflows import TenantProvisioningWorkflow
@@ -32,8 +32,9 @@ class RegistrationService:
         """Register new user AND create a new tenant.
 
         1. Create user in public.users (flush to get ID)
-        2. Start TenantProvisioningWorkflow (creates tenant + membership)
-        3. Commit only if workflow starts successfully
+        2. Create tenant record (unique constraint on slug handles races)
+        3. Start TenantProvisioningWorkflow (provisions tenant + creates membership)
+        4. Commit only if workflow starts successfully
 
         Returns (user, workflow_id).
         Raises ValueError if email already exists, workflow fails to start, etc.
@@ -52,7 +53,17 @@ class RegistrationService:
             await self.session.rollback()
             raise ValueError("Email already registered") from e
 
-        # Start tenant provisioning workflow
+        # Create tenant record FIRST (unique constraint on slug handles races)
+        tenant = Tenant(name=tenant_name, slug=tenant_slug, status=TenantStatus.PROVISIONING.value)
+        self.session.add(tenant)
+
+        try:
+            await self.session.flush()
+        except IntegrityError as e:
+            await self.session.rollback()
+            raise ValueError(f"Tenant with slug '{tenant_slug}' already exists") from e
+
+        # Start tenant provisioning workflow with tenant_id
         settings = get_settings()
         client = await get_temporal_client()
         workflow_id = f"tenant-provision-{tenant_slug}"
@@ -60,7 +71,7 @@ class RegistrationService:
         try:
             await client.start_workflow(
                 TenantProvisioningWorkflow.run,
-                args=[tenant_name, tenant_slug, str(user.id)],
+                args=[str(tenant.id), str(user.id)],
                 id=workflow_id,
                 task_queue=settings.temporal_task_queue,
             )

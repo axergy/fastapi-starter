@@ -7,11 +7,18 @@ from jose import JWTError, jwt
 
 from src.app.core.config import get_settings
 
-_password_hasher = argon2.PasswordHasher(
-    time_cost=2,
-    memory_cost=65536,
-    parallelism=1,
-)
+
+def _create_password_hasher() -> argon2.PasswordHasher:
+    """Create password hasher with settings from config."""
+    settings = get_settings()
+    return argon2.PasswordHasher(
+        time_cost=settings.argon2_time_cost,
+        memory_cost=settings.argon2_memory_cost,
+        parallelism=settings.argon2_parallelism,
+    )
+
+
+_password_hasher = _create_password_hasher()
 
 
 def hash_password(password: str) -> str:

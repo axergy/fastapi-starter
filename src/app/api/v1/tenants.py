@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, status
 
-from src.app.api.dependencies import TenantServiceDep
+from src.app.api.dependencies import AuthenticatedUser, TenantServiceDep
 from src.app.models.public import TenantStatus
 from src.app.schemas.tenant import (
     TenantCreate,
@@ -14,7 +14,26 @@ from src.app.schemas.tenant import (
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 
 
-@router.post("", response_model=TenantProvisioningResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "",
+    response_model=TenantProvisioningResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        202: {
+            "description": "Tenant provisioning started",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "workflow_id": "tenant-provisioning-acme-corp",
+                        "slug": "acme-corp",
+                        "status": "provisioning"
+                    }
+                }
+            }
+        },
+        409: {"description": "Tenant slug already exists"}
+    }
+)
 async def create_tenant(
     request: TenantCreate,
     service: TenantServiceDep,
@@ -39,7 +58,48 @@ async def create_tenant(
     )
 
 
-@router.get("/{slug}/status", response_model=TenantStatusResponse)
+@router.get(
+    "/{slug}/status",
+    response_model=TenantStatusResponse,
+    responses={
+        200: {
+            "description": "Tenant status retrieved",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "ready": {
+                            "summary": "Tenant is ready",
+                            "value": {
+                                "status": "ready",
+                                "tenant": {
+                                    "id": "550e8400-e29b-41d4-a716-446655440000",
+                                    "name": "Acme Corporation",
+                                    "slug": "acme-corp",
+                                    "status": "ready"
+                                }
+                            }
+                        },
+                        "provisioning": {
+                            "summary": "Tenant is provisioning",
+                            "value": {
+                                "status": "provisioning",
+                                "tenant": None
+                            }
+                        },
+                        "failed": {
+                            "summary": "Provisioning failed",
+                            "value": {
+                                "status": "failed",
+                                "tenant": None
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        404: {"description": "Tenant not found"}
+    }
+)
 async def get_tenant_status(slug: str, service: TenantServiceDep) -> TenantStatusResponse:
     """
     Check tenant provisioning status from database.
@@ -65,14 +125,63 @@ async def get_tenant_status(slug: str, service: TenantServiceDep) -> TenantStatu
     )
 
 
-@router.get("", response_model=list[TenantRead])
-async def list_tenants(service: TenantServiceDep) -> list[TenantRead]:
-    """List all active tenants."""
-    tenants = await service.list_tenants()
+@router.get(
+    "",
+    response_model=list[TenantRead],
+    responses={
+        200: {
+            "description": "List of tenants",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": "550e8400-e29b-41d4-a716-446655440000",
+                            "name": "Acme Corporation",
+                            "slug": "acme-corp",
+                            "status": "ready"
+                        },
+                        {
+                            "id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
+                            "name": "Beta Industries",
+                            "slug": "beta-industries",
+                            "status": "ready"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+)
+async def list_tenants(
+    current_user: AuthenticatedUser,
+    service: TenantServiceDep,
+) -> list[TenantRead]:
+    """List tenants where current user has membership."""
+    # Get only tenants the user has access to
+    tenants = await service.list_user_tenants(current_user.id)
     return [TenantRead.model_validate(t) for t in tenants]
 
 
-@router.get("/{slug}", response_model=TenantRead)
+@router.get(
+    "/{slug}",
+    response_model=TenantRead,
+    responses={
+        200: {
+            "description": "Tenant details",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "name": "Acme Corporation",
+                        "slug": "acme-corp",
+                        "status": "ready"
+                    }
+                }
+            }
+        },
+        404: {"description": "Tenant not found"}
+    }
+)
 async def get_tenant(slug: str, service: TenantServiceDep) -> TenantRead:
     """Get tenant by slug."""
     tenant = await service.get_by_slug(slug)

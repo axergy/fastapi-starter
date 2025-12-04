@@ -7,6 +7,7 @@ from src.app.models.public import (
     TenantStatus,
     User,
     UserTenantMembership,
+    WorkflowExecution,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "TenantStatus",
     "User",
     "UserTenantMembership",
+    "WorkflowExecution",
 ]

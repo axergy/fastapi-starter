@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from src.app.core.config import get_settings
+from src.app.core.validators import validate_schema_name
 
 _engine: AsyncEngine | None = None
 
@@ -46,14 +47,20 @@ async def get_tenant_session(
 
     Uses connection-level search_path to ensure isolation even with connection pooling.
     """
-    if not tenant_schema.replace("_", "").isalnum():
-        raise ValueError(f"Invalid schema name: {tenant_schema}")
+    # Validate schema name before any SQL execution
+    validate_schema_name(tenant_schema)
 
     if engine is None:
         engine = get_engine()
 
     async with engine.connect() as connection:
-        await connection.execute(text(f"SET search_path TO {tenant_schema}, public"))
+        # Use quote_ident to properly quote the schema name
+        quoted_schema = await connection.scalar(
+            text("SELECT quote_ident(:schema)").bindparams(schema=tenant_schema)
+        )
+        await connection.execute(
+            text(f"SET search_path TO {quoted_schema}, public")
+        )
         await connection.commit()
 
         session_factory = async_sessionmaker(

@@ -15,6 +15,7 @@ from src.app.repositories.membership_repository import MembershipRepository
 from src.app.repositories.tenant_repository import TenantRepository
 from src.app.repositories.token_repository import RefreshTokenRepository
 from src.app.repositories.user_repository import UserRepository
+from src.app.repositories.workflow_execution_repository import WorkflowExecutionRepository
 from src.app.services.auth_service import AuthService, TokenType
 from src.app.services.registration_service import RegistrationService
 from src.app.services.tenant_service import TenantService
@@ -111,10 +112,20 @@ def get_tenant_repository(session: DBSession) -> TenantRepository:
     return TenantRepository(session)
 
 
+def get_workflow_execution_repository(
+    session: DBSession,
+) -> WorkflowExecutionRepository:
+    """Get workflow execution repository with public schema session."""
+    return WorkflowExecutionRepository(session)
+
+
 UserRepo = Annotated[UserRepository, Depends(get_user_repository)]
 TokenRepo = Annotated[RefreshTokenRepository, Depends(get_token_repository)]
 MembershipRepo = Annotated[MembershipRepository, Depends(get_membership_repository)]
 TenantRepo = Annotated[TenantRepository, Depends(get_tenant_repository)]
+WorkflowExecRepo = Annotated[
+    WorkflowExecutionRepository, Depends(get_workflow_execution_repository)
+]
 
 
 # =============================================================================
@@ -144,9 +155,13 @@ def get_auth_service(
     )
 
 
-def get_tenant_service(tenant_repo: TenantRepo, session: DBSession) -> TenantService:
+def get_tenant_service(
+    tenant_repo: TenantRepo,
+    workflow_exec_repo: WorkflowExecRepo,
+    session: DBSession,
+) -> TenantService:
     """Get tenant service."""
-    return TenantService(tenant_repo, session)
+    return TenantService(tenant_repo, workflow_exec_repo, session)
 
 
 def get_registration_service(user_repo: UserRepo, session: DBSession) -> RegistrationService:
@@ -258,3 +273,66 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_authenticated_user(
+    session: DBSession,
+    authorization: Annotated[str | None, Header()] = None,
+) -> User:
+    """Validate access token and return user (no tenant context required).
+
+    Used for tenant-agnostic endpoints like listing user's tenants.
+    Does NOT validate tenant membership - just validates the token and user exists.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+
+    token = authorization[7:]
+    payload = decode_token(token)
+
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+    if payload.get("type") != TokenType.ACCESS:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+        )
+
+    user_id = payload.get("sub")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+
+    # Validate user_id format
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user_id in token",
+        ) from e
+
+    # Get user from public schema
+    result = await session.execute(select(User).where(User.id == user_uuid))
+    user = result.scalar_one_or_none()
+
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    return user
+
+
+AuthenticatedUser = Annotated[User, Depends(get_authenticated_user)]

@@ -5,6 +5,7 @@ from src.app.repositories.membership_repository import MembershipRepository
 from src.app.repositories.tenant_repository import TenantRepository
 from src.app.repositories.token_repository import RefreshTokenRepository
 from src.app.repositories.user_repository import UserRepository
+from src.app.repositories.workflow_execution_repository import WorkflowExecutionRepository
 
 __all__ = [
     "BaseRepository",
@@ -12,4 +13,5 @@ __all__ = [
     "RefreshTokenRepository",
     "TenantRepository",
     "MembershipRepository",
+    "WorkflowExecutionRepository",
 ]
