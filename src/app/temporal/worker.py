@@ -14,7 +14,6 @@ from src.app.core.logging import get_logger, setup_logging
 from src.app.temporal.activities import (
     create_admin_membership,
     create_stripe_customer,
-    create_tenant_record,
     dispose_sync_engine,
     run_tenant_migrations,
     send_welcome_email,
@@ -39,7 +38,6 @@ async def main() -> None:
             create_admin_membership,
             create_stripe_customer,
             send_welcome_email,
-            create_tenant_record,
             run_tenant_migrations,
             update_tenant_status,
         ],

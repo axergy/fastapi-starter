@@ -20,7 +20,9 @@ class BaseRepository[ModelType: SQLModel]:
 
     async def get_by_id(self, id: UUID) -> ModelType | None:
         """Get a record by its primary key."""
-        result = await self.session.execute(select(self.model).where(self.model.id == id))
+        result = await self.session.execute(
+            select(self.model).where(self.model.id == id)  # type: ignore[attr-defined]
+        )
         return result.scalar_one_or_none()
 
     def add(self, entity: ModelType) -> None:

@@ -13,9 +13,7 @@ class MembershipRepository(BaseRepository[UserTenantMembership]):
 
     model = UserTenantMembership
 
-    async def get_membership(
-        self, user_id: UUID, tenant_id: UUID
-    ) -> UserTenantMembership | None:
+    async def get_membership(self, user_id: UUID, tenant_id: UUID) -> UserTenantMembership | None:
         """Get membership for a user in a tenant."""
         result = await self.session.execute(
             select(UserTenantMembership).where(

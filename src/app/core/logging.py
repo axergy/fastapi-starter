@@ -32,14 +32,10 @@ def setup_logging(debug: bool = False) -> None:
 
     if debug:
         # Human-readable colored output for development
-        processors = shared_processors + [
-            structlog.dev.ConsoleRenderer(colors=True)
-        ]
+        processors = shared_processors + [structlog.dev.ConsoleRenderer(colors=True)]
     else:
         # JSON output for production
-        processors = shared_processors + [
-            structlog.processors.JSONRenderer()
-        ]
+        processors = shared_processors + [structlog.processors.JSONRenderer()]
 
     structlog.configure(
         processors=processors,

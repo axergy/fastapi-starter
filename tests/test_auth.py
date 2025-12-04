@@ -11,13 +11,9 @@ pytestmark = pytest.mark.asyncio
 class TestRegistration:
     """Tests for user + tenant registration (Lobby Pattern)."""
 
-    async def test_register_creates_user_and_tenant(
-        self, client_no_tenant: AsyncClient
-    ) -> None:
+    async def test_register_creates_user_and_tenant(self, client_no_tenant: AsyncClient) -> None:
         """Test registration creates user and starts tenant provisioning workflow."""
-        with patch(
-            "src.app.services.registration_service.get_temporal_client"
-        ) as mock_get_client:
+        with patch("src.app.services.registration_service.get_temporal_client") as mock_get_client:
             # Mock Temporal client
             mock_client = AsyncMock()
             mock_client.start_workflow.return_value = AsyncMock()
@@ -41,13 +37,9 @@ class TestRegistration:
         assert data["tenant_slug"] == "new_company"
         assert "workflow_id" in data
 
-    async def test_register_duplicate_email_fails(
-        self, client_no_tenant: AsyncClient
-    ) -> None:
+    async def test_register_duplicate_email_fails(self, client_no_tenant: AsyncClient) -> None:
         """Test registration fails for duplicate email."""
-        with patch(
-            "src.app.services.registration_service.get_temporal_client"
-        ) as mock_get_client:
+        with patch("src.app.services.registration_service.get_temporal_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.start_workflow.return_value = AsyncMock()
             mock_get_client.return_value = mock_client
@@ -78,9 +70,7 @@ class TestRegistration:
 
         assert response.status_code == 409
 
-    async def test_register_invalid_slug_format(
-        self, client_no_tenant: AsyncClient
-    ) -> None:
+    async def test_register_invalid_slug_format(self, client_no_tenant: AsyncClient) -> None:
         """Test registration fails for invalid tenant slug format."""
         response = await client_no_tenant.post(
             "/api/v1/auth/register",
@@ -99,9 +89,7 @@ class TestRegistration:
 class TestLogin:
     """Tests for login with tenant membership validation."""
 
-    async def test_login_with_membership(
-        self, client: AsyncClient, test_user: dict
-    ) -> None:
+    async def test_login_with_membership(self, client: AsyncClient, test_user: dict) -> None:
         """Test successful login when user has membership in tenant."""
         response = await client.post(
             "/api/v1/auth/login",
@@ -148,9 +136,7 @@ class TestLogin:
 class TestTokenOperations:
     """Tests for token refresh and logout."""
 
-    async def test_refresh_token(
-        self, client: AsyncClient, test_user: dict
-    ) -> None:
+    async def test_refresh_token(self, client: AsyncClient, test_user: dict) -> None:
         """Test refreshing access token."""
         # Login first
         login_response = await client.post(
@@ -182,9 +168,7 @@ class TestTokenOperations:
 
         assert response.status_code == 401
 
-    async def test_logout_revokes_token(
-        self, client: AsyncClient, test_user: dict
-    ) -> None:
+    async def test_logout_revokes_token(self, client: AsyncClient, test_user: dict) -> None:
         """Test logout revokes refresh token."""
         # Login
         login_response = await client.post(
@@ -214,9 +198,7 @@ class TestTokenOperations:
 class TestCurrentUser:
     """Tests for authenticated user endpoints."""
 
-    async def test_get_current_user(
-        self, client: AsyncClient, test_user: dict
-    ) -> None:
+    async def test_get_current_user(self, client: AsyncClient, test_user: dict) -> None:
         """Test getting current user with valid token."""
         # Login
         login_response = await client.post(
@@ -238,9 +220,7 @@ class TestCurrentUser:
         data = response.json()
         assert data["email"] == test_user["email"]
 
-    async def test_get_current_user_invalid_token(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_get_current_user_invalid_token(self, client: AsyncClient) -> None:
         """Test getting current user with invalid token fails."""
         response = await client.get(
             "/api/v1/users/me",
@@ -249,9 +229,7 @@ class TestCurrentUser:
 
         assert response.status_code == 401
 
-    async def test_get_current_user_no_auth_header(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_get_current_user_no_auth_header(self, client: AsyncClient) -> None:
         """Test getting current user without auth header fails."""
         response = await client.get("/api/v1/users/me")
 

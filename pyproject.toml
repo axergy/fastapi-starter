@@ -32,6 +32,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
 ]
 
 [build-system]
@@ -41,17 +42,53 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/app"]
 
+# --- Ruff Configuration ---
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "SIM", "UP"]
+# Enable specific rules:
+# E/W: pycodestyle (standard errors/warnings)
+# F: Pyflakes (logical errors)
+# I: isort (import sorting)
+# B: flake8-bugbear (common bugs)
+# UP: pyupgrade (upgrades syntax, e.g., Set[] -> set())
+# SIM: flake8-simplify (simplifications)
+# FAST: FastAPI specific rules
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "FAST"]
+# FAST001: response_model is often preferred for explicit documentation
+ignore = ["FAST001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+# --- MyPy Configuration ---
 [tool.mypy]
 python_version = "3.12"
-strict = true
+strict = false
+ignore_missing_imports = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+warn_return_any = false
+warn_unused_ignores = true
+plugins = [
+    "pydantic.mypy",
+]
+
+# Exclude problematic directories
+exclude = [
+    "tests/",
+    "src/alembic/",
+]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true

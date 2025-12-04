@@ -12,6 +12,7 @@ For fresh installs where 001 already includes the column, this is a no-op.
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import context, op
 
 revision: str = "002"

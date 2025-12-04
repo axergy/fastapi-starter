@@ -114,7 +114,7 @@ def get_db(tenant_schema: str = Depends(get_current_tenant_schema)):
     with engine.connect() as connection:
         # MAGIC HAPPENS HERE: Postgres switches context efficiently
         connection.execute(text(f"SET search_path TO {tenant_schema}, public"))
-        
+
         with Session(connection) as session:
             yield session
 2. Temporal Workflows (Instead of Celery)
@@ -130,11 +130,11 @@ class OnboardingWorkflow:
     async def run(self, user_email: str):
         # Step 1: Create Stripe Customer
         stripe_id = await workflow.execute_activity(
-            create_stripe_customer, 
+            create_stripe_customer,
             user_email,
             start_to_close_timeout=timedelta(seconds=10)
         )
-        
+
         # Step 2: Send Welcome Email
         await workflow.execute_activity(
             send_welcome_email,

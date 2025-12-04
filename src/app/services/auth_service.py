@@ -73,9 +73,7 @@ class AuthService:
                 return None
 
             # 4. Verify membership in tenant
-            if not await self.membership_repo.user_has_active_membership(
-                user.id, self.tenant_id
-            ):
+            if not await self.membership_repo.user_has_active_membership(user.id, self.tenant_id):
                 return None
 
             # Create tokens with tenant_id (UUID)
@@ -123,9 +121,7 @@ class AuthService:
             return None
 
         token_hash = sha256(refresh_token.encode()).hexdigest()
-        db_token = await self.token_repo.get_valid_by_hash_and_tenant(
-            token_hash, self.tenant_id
-        )
+        db_token = await self.token_repo.get_valid_by_hash_and_tenant(token_hash, self.tenant_id)
 
         if db_token is None:
             return None

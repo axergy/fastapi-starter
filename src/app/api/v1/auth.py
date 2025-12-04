@@ -29,14 +29,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
                     "example": {
                         "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                         "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                        "token_type": "bearer"
+                        "token_type": "bearer",
                     }
                 }
-            }
+            },
         },
         401: {"description": "Invalid credentials"},
-        403: {"description": "User not member of tenant"}
-    }
+        403: {"description": "User not member of tenant"},
+    },
 )
 @limiter.limit("5/minute")
 async def login(
@@ -65,14 +65,12 @@ async def login(
             "description": "Token refreshed successfully",
             "content": {
                 "application/json": {
-                    "example": {
-                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    }
+                    "example": {"access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}
                 }
-            }
+            },
         },
-        401: {"description": "Invalid or expired refresh token"}
-    }
+        401: {"description": "Invalid or expired refresh token"},
+    },
 )
 @limiter.limit("10/minute")
 async def refresh(
@@ -105,16 +103,16 @@ async def refresh(
                             "email": "user@example.com",
                             "full_name": "John Doe",
                             "is_active": True,
-                            "is_superuser": False
+                            "is_superuser": False,
                         },
                         "workflow_id": "tenant-provisioning-acme-corp",
-                        "tenant_slug": "acme-corp"
+                        "tenant_slug": "acme-corp",
                     }
                 }
-            }
+            },
         },
-        409: {"description": "Validation error or tenant slug already exists"}
-    }
+        409: {"description": "Validation error or tenant slug already exists"},
+    },
 )
 @limiter.limit("3/hour")
 async def register(
@@ -150,8 +148,6 @@ async def register(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("5/minute")
-async def logout(
-    request: Request, logout_data: RefreshRequest, service: AuthServiceDep
-) -> None:
+async def logout(request: Request, logout_data: RefreshRequest, service: AuthServiceDep) -> None:
     """Revoke refresh token (logout)."""
     await service.revoke_refresh_token(logout_data.refresh_token)

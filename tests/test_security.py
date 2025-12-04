@@ -1,4 +1,5 @@
 """Tests for security-critical functionality."""
+
 import pytest
 from pydantic import ValidationError
 

@@ -1,4 +1,5 @@
 """Tests for TenantStatus enum validation and usage."""
+
 import pytest
 
 from src.app.models.public import Tenant, TenantStatus

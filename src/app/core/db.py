@@ -58,9 +58,7 @@ async def get_tenant_session(
         quoted_schema = await connection.scalar(
             text("SELECT quote_ident(:schema)").bindparams(schema=tenant_schema)
         )
-        await connection.execute(
-            text(f"SET search_path TO {quoted_schema}, public")
-        )
+        await connection.execute(text(f"SET search_path TO {quoted_schema}, public"))
         await connection.commit()
 
         session_factory = async_sessionmaker(

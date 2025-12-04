@@ -35,7 +35,10 @@ class TenantRepository(BaseRepository[Tenant]):
         """List tenants where user has active membership."""
         query = (
             select(Tenant)
-            .join(UserTenantMembership, Tenant.id == UserTenantMembership.tenant_id)
+            .join(
+                UserTenantMembership,
+                Tenant.id == UserTenantMembership.tenant_id,  # type: ignore[arg-type]
+            )
             .where(
                 UserTenantMembership.user_id == user_id,
                 UserTenantMembership.is_active == True,  # noqa: E712

@@ -66,9 +66,7 @@ class RegisterRequest(BaseModel):
     @classmethod
     def validate_slug(cls, v: str) -> str:
         if not re.match(r"^[a-z0-9_]+$", v):
-            raise ValueError(
-                "Slug must contain only lowercase letters, numbers, and underscores"
-            )
+            raise ValueError("Slug must contain only lowercase letters, numbers, and underscores")
         return v
 
 

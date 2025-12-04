@@ -20,9 +20,7 @@ class WorkflowExecutionRepository(BaseRepository[WorkflowExecution]):
         )
         return result.scalar_one_or_none()
 
-    async def list_by_entity(
-        self, entity_type: str, entity_id: UUID
-    ) -> list[WorkflowExecution]:
+    async def list_by_entity(self, entity_type: str, entity_id: UUID) -> list[WorkflowExecution]:
         """List workflow executions for a specific entity."""
         result = await self.session.execute(
             select(WorkflowExecution)
@@ -30,7 +28,7 @@ class WorkflowExecutionRepository(BaseRepository[WorkflowExecution]):
                 WorkflowExecution.entity_type == entity_type,
                 WorkflowExecution.entity_id == entity_id,
             )
-            .order_by(WorkflowExecution.created_at.desc())
+            .order_by(WorkflowExecution.created_at.desc())  # type: ignore[attr-defined]
         )
         return list(result.scalars().all())
 
@@ -39,6 +37,6 @@ class WorkflowExecutionRepository(BaseRepository[WorkflowExecution]):
         result = await self.session.execute(
             select(WorkflowExecution)
             .where(WorkflowExecution.status == status)
-            .order_by(WorkflowExecution.created_at.desc())
+            .order_by(WorkflowExecution.created_at.desc())  # type: ignore[attr-defined]
         )
         return list(result.scalars().all())

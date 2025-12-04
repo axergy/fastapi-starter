@@ -82,7 +82,7 @@ def create_app() -> FastAPI:
         health_status: dict[str, Any] = {
             "status": "healthy",
             "database": "unknown",
-            "temporal": "unknown"
+            "temporal": "unknown",
         }
 
         # Check database

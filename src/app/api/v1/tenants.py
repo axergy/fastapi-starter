@@ -26,13 +26,13 @@ router = APIRouter(prefix="/tenants", tags=["tenants"])
                     "example": {
                         "workflow_id": "tenant-provisioning-acme-corp",
                         "slug": "acme-corp",
-                        "status": "provisioning"
+                        "status": "provisioning",
                     }
                 }
-            }
+            },
         },
-        409: {"description": "Tenant slug already exists"}
-    }
+        409: {"description": "Tenant slug already exists"},
+    },
 )
 async def create_tenant(
     request: TenantCreate,
@@ -75,30 +75,24 @@ async def create_tenant(
                                     "id": "550e8400-e29b-41d4-a716-446655440000",
                                     "name": "Acme Corporation",
                                     "slug": "acme-corp",
-                                    "status": "ready"
-                                }
-                            }
+                                    "status": "ready",
+                                },
+                            },
                         },
                         "provisioning": {
                             "summary": "Tenant is provisioning",
-                            "value": {
-                                "status": "provisioning",
-                                "tenant": None
-                            }
+                            "value": {"status": "provisioning", "tenant": None},
                         },
                         "failed": {
                             "summary": "Provisioning failed",
-                            "value": {
-                                "status": "failed",
-                                "tenant": None
-                            }
-                        }
+                            "value": {"status": "failed", "tenant": None},
+                        },
                     }
                 }
-            }
+            },
         },
-        404: {"description": "Tenant not found"}
-    }
+        404: {"description": "Tenant not found"},
+    },
 )
 async def get_tenant_status(slug: str, service: TenantServiceDep) -> TenantStatusResponse:
     """
@@ -138,19 +132,19 @@ async def get_tenant_status(slug: str, service: TenantServiceDep) -> TenantStatu
                             "id": "550e8400-e29b-41d4-a716-446655440000",
                             "name": "Acme Corporation",
                             "slug": "acme-corp",
-                            "status": "ready"
+                            "status": "ready",
                         },
                         {
                             "id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
                             "name": "Beta Industries",
                             "slug": "beta-industries",
-                            "status": "ready"
-                        }
+                            "status": "ready",
+                        },
                     ]
                 }
-            }
+            },
         }
-    }
+    },
 )
 async def list_tenants(
     current_user: AuthenticatedUser,
@@ -174,13 +168,13 @@ async def list_tenants(
                         "id": "550e8400-e29b-41d4-a716-446655440000",
                         "name": "Acme Corporation",
                         "slug": "acme-corp",
-                        "status": "ready"
+                        "status": "ready",
                     }
                 }
-            }
+            },
         },
-        404: {"description": "Tenant not found"}
-    }
+        404: {"description": "Tenant not found"},
+    },
 )
 async def get_tenant(slug: str, service: TenantServiceDep) -> TenantRead:
     """Get tenant by slug."""
