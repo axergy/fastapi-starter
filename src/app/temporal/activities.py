@@ -11,12 +11,16 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 from temporalio import activity
 
 from src.app.core.config import get_settings
 from src.app.core.migrations import run_migrations_sync
 from src.app.models.public import Tenant
+
+# Singleton sync engine for activities
+_sync_engine: Engine | None = None
 
 
 @dataclass
@@ -91,12 +95,23 @@ class RunMigrationsInput:
     schema_name: str
 
 
-def _get_sync_engine():
-    """Get synchronous database engine for activities."""
-    settings = get_settings()
-    # Convert async URL to sync (asyncpg -> psycopg2)
-    sync_url = settings.database_url.replace("+asyncpg", "")
-    return create_engine(sync_url)
+def get_sync_engine() -> Engine:
+    """Get or create synchronous database engine (singleton)."""
+    global _sync_engine
+    if _sync_engine is None:
+        settings = get_settings()
+        # Convert async URL to sync (asyncpg -> psycopg2)
+        sync_url = settings.database_url.replace("+asyncpg", "")
+        _sync_engine = create_engine(sync_url, pool_pre_ping=True)
+    return _sync_engine
+
+
+def dispose_sync_engine() -> None:
+    """Dispose of the sync engine (call on worker shutdown)."""
+    global _sync_engine
+    if _sync_engine is not None:
+        _sync_engine.dispose()
+        _sync_engine = None
 
 
 @activity.defn
@@ -108,7 +123,7 @@ async def create_tenant_record(input: CreateTenantInput) -> CreateTenantOutput:
     """
     activity.logger.info(f"Creating tenant record for slug: {input.slug}")
 
-    engine = _get_sync_engine()
+    engine = get_sync_engine()
     with Session(engine) as session:
         # Check if tenant already exists (idempotency)
         stmt = select(Tenant).where(Tenant.slug == input.slug)
@@ -168,7 +183,7 @@ async def update_tenant_status(input: UpdateTenantStatusInput) -> bool:
     """
     activity.logger.info(f"Updating tenant {input.tenant_id} status to: {input.status}")
 
-    engine = _get_sync_engine()
+    engine = get_sync_engine()
     with Session(engine) as session:
         # Convert string tenant_id to UUID for comparison
         tenant_uuid = UUID(input.tenant_id)

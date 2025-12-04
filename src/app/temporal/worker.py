@@ -13,6 +13,7 @@ from src.app.core.config import get_settings
 from src.app.temporal.activities import (
     create_stripe_customer,
     create_tenant_record,
+    dispose_sync_engine,
     run_tenant_migrations,
     send_welcome_email,
     update_tenant_status,
@@ -39,7 +40,10 @@ async def main() -> None:
     )
 
     print(f"Starting worker on queue: {settings.temporal_task_queue}")
-    await worker.run()
+    try:
+        await worker.run()
+    finally:
+        dispose_sync_engine()
 
 
 if __name__ == "__main__":
