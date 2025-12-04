@@ -10,8 +10,13 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from src.app.core.config import get_settings
-from src.app.temporal.activities import create_stripe_customer, send_welcome_email
-from src.app.temporal.workflows import UserOnboardingWorkflow
+from src.app.temporal.activities import (
+    create_stripe_customer,
+    create_tenant_record,
+    run_tenant_migrations,
+    send_welcome_email,
+)
+from src.app.temporal.workflows import TenantProvisioningWorkflow, UserOnboardingWorkflow
 
 
 async def main() -> None:
@@ -22,8 +27,13 @@ async def main() -> None:
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[UserOnboardingWorkflow],
-        activities=[create_stripe_customer, send_welcome_email],
+        workflows=[UserOnboardingWorkflow, TenantProvisioningWorkflow],
+        activities=[
+            create_stripe_customer,
+            send_welcome_email,
+            create_tenant_record,
+            run_tenant_migrations,
+        ],
     )
 
     print(f"Starting worker on queue: {settings.temporal_task_queue}")

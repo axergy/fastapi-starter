@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Multi-tenant FastAPI SaaS starter with Temporal workflows"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115.0",
+    "fastapi[standard]>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic[email]>=2.9.0",
     "pydantic-settings>=2.6.0",

@@ -25,3 +25,19 @@ class TenantRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TenantProvisioningResponse(BaseModel):
+    """Response when tenant provisioning workflow is started."""
+
+    workflow_id: str
+    slug: str
+    status: str = "provisioning"
+
+
+class TenantStatusResponse(BaseModel):
+    """Response for tenant provisioning status check."""
+
+    status: str  # "provisioning", "ready", "failed"
+    tenant: TenantRead | None = None
+    error: str | None = None
