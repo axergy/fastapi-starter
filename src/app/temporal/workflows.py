@@ -13,6 +13,7 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
+    from src.app.models.public import TenantStatus
     from src.app.temporal.activities import (
         CreateStripeCustomerInput,
         CreateStripeCustomerOutput,
@@ -130,7 +131,9 @@ class TenantProvisioningWorkflow:
             # Step 3: Mark tenant as ready
             await workflow.execute_activity(
                 update_tenant_status,
-                UpdateTenantStatusInput(tenant_id=result.tenant_id, status="ready"),
+                UpdateTenantStatusInput(
+                    tenant_id=result.tenant_id, status=TenantStatus.READY.value
+                ),
                 start_to_close_timeout=timedelta(seconds=10),
                 retry_policy=RetryPolicy(
                     maximum_attempts=3,
@@ -147,7 +150,9 @@ class TenantProvisioningWorkflow:
                 workflow.logger.error(f"Provisioning failed, marking tenant as failed: {e}")
                 await workflow.execute_activity(
                     update_tenant_status,
-                    UpdateTenantStatusInput(tenant_id=result.tenant_id, status="failed"),
+                    UpdateTenantStatusInput(
+                        tenant_id=result.tenant_id, status=TenantStatus.FAILED.value
+                    ),
                     start_to_close_timeout=timedelta(seconds=10),
                     retry_policy=RetryPolicy(
                         maximum_attempts=3,
