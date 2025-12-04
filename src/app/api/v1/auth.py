@@ -1,12 +1,8 @@
 """Authentication endpoints."""
 
-from typing import Annotated
+from fastapi import APIRouter, HTTPException, status
 
-from fastapi import APIRouter, Depends, HTTPException, status
-
-from src.app.api.dependencies import DBSession, get_tenant_id_from_header
-from src.app.repositories.token_repository import RefreshTokenRepository
-from src.app.repositories.user_repository import UserRepository
+from src.app.api.dependencies import AuthServiceDep
 from src.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -15,26 +11,13 @@ from src.app.schemas.auth import (
     RegisterRequest,
 )
 from src.app.schemas.user import UserRead
-from src.app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _get_auth_service(session, tenant_id: str) -> AuthService:
-    """Factory function for AuthService with repositories."""
-    user_repo = UserRepository(session)
-    token_repo = RefreshTokenRepository(session)
-    return AuthService(user_repo, token_repo, tenant_id)
-
-
 @router.post("/login", response_model=LoginResponse)
-async def login(
-    request: LoginRequest,
-    session: DBSession,
-    tenant_id: Annotated[str, Depends(get_tenant_id_from_header)],
-) -> LoginResponse:
+async def login(request: LoginRequest, service: AuthServiceDep) -> LoginResponse:
     """Authenticate user and return tokens."""
-    service = _get_auth_service(session, tenant_id)
     result = await service.authenticate(request.email, request.password)
 
     if result is None:
@@ -47,13 +30,8 @@ async def login(
 
 
 @router.post("/refresh", response_model=RefreshResponse)
-async def refresh(
-    request: RefreshRequest,
-    session: DBSession,
-    tenant_id: Annotated[str, Depends(get_tenant_id_from_header)],
-) -> RefreshResponse:
+async def refresh(request: RefreshRequest, service: AuthServiceDep) -> RefreshResponse:
     """Refresh access token using refresh token."""
-    service = _get_auth_service(session, tenant_id)
     access_token = await service.refresh_access_token(request.refresh_token)
 
     if access_token is None:
@@ -66,13 +44,8 @@ async def refresh(
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-async def register(
-    request: RegisterRequest,
-    session: DBSession,
-    tenant_id: Annotated[str, Depends(get_tenant_id_from_header)],
-) -> UserRead:
+async def register(request: RegisterRequest, service: AuthServiceDep) -> UserRead:
     """Register new user."""
-    service = _get_auth_service(session, tenant_id)
     user = await service.register_user(
         email=request.email,
         password=request.password,
@@ -89,11 +62,6 @@ async def register(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(
-    request: RefreshRequest,
-    session: DBSession,
-    tenant_id: Annotated[str, Depends(get_tenant_id_from_header)],
-) -> None:
+async def logout(request: RefreshRequest, service: AuthServiceDep) -> None:
     """Revoke refresh token (logout)."""
-    service = _get_auth_service(session, tenant_id)
     await service.revoke_refresh_token(request.refresh_token)

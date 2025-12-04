@@ -13,9 +13,7 @@ class TenantRepository(BaseRepository[Tenant]):
 
     async def get_by_slug(self, slug: str) -> Tenant | None:
         """Get tenant by slug."""
-        result = await self.session.execute(
-            select(Tenant).where(Tenant.slug == slug)
-        )
+        result = await self.session.execute(select(Tenant).where(Tenant.slug == slug))
         return result.scalar_one_or_none()
 
     async def exists_by_slug(self, slug: str) -> bool:
