@@ -1,4 +1,4 @@
-import logging
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -7,6 +7,7 @@ from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
@@ -14,11 +15,12 @@ from sqlalchemy import text
 from src.app.api.v1.router import api_router
 from src.app.core.config import get_settings
 from src.app.core.db import dispose_engine, get_public_session
-from src.app.core.logging import setup_logging
+from src.app.core.logging import get_logger, setup_logging
 from src.app.core.rate_limit import limiter
+from src.app.core.security_headers import SecurityHeadersMiddleware
 from src.app.temporal.client import close_temporal_client, get_temporal_client
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -30,9 +32,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    logger.info("Shutting down...")
+    # Graceful shutdown with drain period
+    grace_period = settings.shutdown_grace_period
+    logger.info(f"Shutdown initiated, draining requests for {grace_period}s...")
+
+    # Allow in-flight requests to complete
+    await asyncio.sleep(grace_period)
+
+    logger.info("Closing connections...")
     await close_temporal_client()
     await dispose_engine()
+    logger.info("Shutdown complete")
 
 
 def create_app() -> FastAPI:
@@ -53,12 +63,18 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Request-ID"],
         expose_headers=["X-Total-Count"],
     )
 
+    # Add security headers middleware
+    app.add_middleware(SecurityHeadersMiddleware)
+
     app.include_router(api_router)
+
+    # Prometheus metrics instrumentation
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
     @app.get("/health")
     async def health() -> JSONResponse:

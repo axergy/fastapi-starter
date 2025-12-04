@@ -5,13 +5,12 @@ Run with: uv run python -m src.app.temporal.worker
 """
 
 import asyncio
-import logging
 
 from temporalio.client import Client
 from temporalio.worker import Worker
 
 from src.app.core.config import get_settings
-from src.app.core.logging import setup_logging
+from src.app.core.logging import get_logger, setup_logging
 from src.app.temporal.activities import (
     create_admin_membership,
     create_stripe_customer,
@@ -23,7 +22,7 @@ from src.app.temporal.activities import (
 )
 from src.app.temporal.workflows import TenantProvisioningWorkflow, UserOnboardingWorkflow
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def main() -> None:

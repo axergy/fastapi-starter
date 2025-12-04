@@ -3,9 +3,8 @@
 import os
 from pathlib import Path
 
-from alembic.config import Config
-
 from alembic import command
+from alembic.config import Config
 
 
 def _get_alembic_config() -> Config:

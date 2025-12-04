@@ -74,9 +74,12 @@ async def login(
         401: {"description": "Invalid or expired refresh token"}
     }
 )
-async def refresh(request: RefreshRequest, service: AuthServiceDep) -> RefreshResponse:
+@limiter.limit("10/minute")
+async def refresh(
+    request: Request, refresh_data: RefreshRequest, service: AuthServiceDep
+) -> RefreshResponse:
     """Refresh access token using refresh token."""
-    access_token = await service.refresh_access_token(request.refresh_token)
+    access_token = await service.refresh_access_token(refresh_data.refresh_token)
 
     if access_token is None:
         raise HTTPException(
@@ -146,6 +149,9 @@ async def register(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: RefreshRequest, service: AuthServiceDep) -> None:
+@limiter.limit("5/minute")
+async def logout(
+    request: Request, logout_data: RefreshRequest, service: AuthServiceDep
+) -> None:
     """Revoke refresh token (logout)."""
-    await service.revoke_refresh_token(request.refresh_token)
+    await service.revoke_refresh_token(logout_data.refresh_token)

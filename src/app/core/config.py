@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     database_pool_size: int = 5
     database_max_overflow: int = 10
 
+    # Shutdown
+    shutdown_grace_period: int = 30
+
     # Auth
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"

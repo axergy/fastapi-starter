@@ -1,5 +1,6 @@
 """Authentication service - handles login, token refresh (Lobby Pattern)."""
 
+import hmac
 from hashlib import sha256
 from uuid import UUID
 
@@ -129,6 +130,10 @@ class AuthService:
         if db_token is None:
             return None
 
+        # Use constant-time comparison to prevent timing attacks
+        if not hmac.compare_digest(token_hash, db_token.token_hash):
+            return None
+
         return create_access_token(user_id, self.tenant_id)
 
     async def revoke_refresh_token(self, refresh_token: str) -> bool:
@@ -138,6 +143,10 @@ class AuthService:
             db_token = await self.token_repo.get_by_hash(token_hash)
 
             if db_token is None:
+                return False
+
+            # Use constant-time comparison to prevent timing attacks
+            if not hmac.compare_digest(token_hash, db_token.token_hash):
                 return False
 
             db_token.revoked = True

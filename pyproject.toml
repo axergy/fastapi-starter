@@ -20,6 +20,8 @@ dependencies = [
     "slowapi>=0.1.9",
     "asgi-correlation-id>=4.0.0",
     "zxcvbn>=4.4.28",
+    "prometheus-fastapi-instrumentator>=7.0.0",
+    "structlog>=24.0.0",
 ]
 
 [project.optional-dependencies]
