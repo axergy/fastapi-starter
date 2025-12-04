@@ -212,8 +212,17 @@ async def get_current_user(
             detail="Token tenant does not match request tenant",
         )
 
+    # Validate user_id format
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user_id in token",
+        ) from e
+
     # Get user from public schema
-    result = await session.execute(select(User).where(User.id == UUID(user_id)))
+    result = await session.execute(select(User).where(User.id == user_uuid))
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active:

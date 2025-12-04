@@ -13,6 +13,7 @@ from uuid import UUID
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from temporalio import activity
 
@@ -230,12 +231,19 @@ class CreateMembershipInput:
 
 def _sync_create_membership(user_id: str, tenant_id: str, role: str) -> bool:
     """Synchronous membership creation logic."""
+    # Validate UUID format upfront
+    try:
+        user_uuid = UUID(user_id)
+        tenant_uuid = UUID(tenant_id)
+    except ValueError as e:
+        raise ValueError(f"Invalid UUID format: {e}") from e
+
     engine = get_sync_engine()
     with Session(engine) as session:
         # Check if membership already exists (idempotency)
         stmt = select(UserTenantMembership).where(
-            UserTenantMembership.user_id == UUID(user_id),
-            UserTenantMembership.tenant_id == UUID(tenant_id),
+            UserTenantMembership.user_id == user_uuid,
+            UserTenantMembership.tenant_id == tenant_uuid,
         )
         existing = session.scalars(stmt).first()
 
@@ -243,13 +251,18 @@ def _sync_create_membership(user_id: str, tenant_id: str, role: str) -> bool:
             return True  # Already exists
 
         membership = UserTenantMembership(
-            user_id=UUID(user_id),
-            tenant_id=UUID(tenant_id),
+            user_id=user_uuid,
+            tenant_id=tenant_uuid,
             role=role,
             created_at=utc_now(),
         )
-        session.add(membership)
-        session.commit()
+        try:
+            session.add(membership)
+            session.commit()
+        except IntegrityError as e:
+            session.rollback()
+            raise RuntimeError(f"Failed to create membership (FK violation): {e}") from e
+
         return True
 
 

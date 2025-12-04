@@ -143,7 +143,13 @@ async def test_user(engine: AsyncEngine, test_tenant: str) -> AsyncGenerator[dic
         "tenant_slug": test_tenant,
     }
 
-    # Cleanup (handled by test_tenant fixture via cascade)
+    # Cleanup - explicitly delete user (membership is cleaned by test_tenant fixture)
+    async with engine.connect() as conn:
+        await conn.execute(
+            text("DELETE FROM public.users WHERE id = :id"),
+            {"id": user_id},
+        )
+        await conn.commit()
 
 
 @pytest.fixture
@@ -166,16 +172,47 @@ async def client(test_tenant: str) -> AsyncGenerator[AsyncClient, None]:
 async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, None]:
     """Create test client WITHOUT tenant header (for registration).
 
-    Cleans up any users/tenants created before and after the test.
+    Only cleans up data created by registration tests (non-test_ prefixed slugs).
     """
     await db.dispose_engine()
 
-    # Pre-test cleanup to handle stale data from previous runs
+    # Pre-test cleanup - only clean non-test data (registration creates slugs without test_ prefix)
     async with engine.connect() as conn:
-        await conn.execute(text("DELETE FROM public.user_tenant_membership"))
-        await conn.execute(text("DELETE FROM public.refresh_tokens"))
-        await conn.execute(text("DELETE FROM public.users"))
-        await conn.execute(text("DELETE FROM public.tenants"))
+        # Delete memberships for non-test tenants
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.user_tenant_membership
+                WHERE tenant_id IN (
+                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
+                )
+                """
+            )
+        )
+        # Delete tokens for non-test tenants
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.refresh_tokens
+                WHERE tenant_id IN (
+                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
+                )
+                """
+            )
+        )
+        # Delete users not associated with test tenants
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.users
+                WHERE id NOT IN (
+                    SELECT user_id FROM public.user_tenant_membership
+                )
+                """
+            )
+        )
+        # Delete non-test tenants
+        await conn.execute(text("DELETE FROM public.tenants WHERE slug NOT LIKE 'test_%'"))
         await conn.commit()
 
     app = create_app()
@@ -187,10 +224,37 @@ async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, N
 
     await db.dispose_engine()
 
-    # Post-test cleanup
+    # Post-test cleanup - same targeted cleanup
     async with engine.connect() as conn:
-        await conn.execute(text("DELETE FROM public.user_tenant_membership"))
-        await conn.execute(text("DELETE FROM public.refresh_tokens"))
-        await conn.execute(text("DELETE FROM public.users"))
-        await conn.execute(text("DELETE FROM public.tenants"))
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.user_tenant_membership
+                WHERE tenant_id IN (
+                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.refresh_tokens
+                WHERE tenant_id IN (
+                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.users
+                WHERE id NOT IN (
+                    SELECT user_id FROM public.user_tenant_membership
+                )
+                """
+            )
+        )
+        await conn.execute(text("DELETE FROM public.tenants WHERE slug NOT LIKE 'test_%'"))
         await conn.commit()

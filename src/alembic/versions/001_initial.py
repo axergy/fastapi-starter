@@ -36,6 +36,12 @@ def upgrade() -> None:
             sa.Column("id", sa.Uuid(), nullable=False),
             sa.Column("name", sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
             sa.Column("slug", sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
+            sa.Column(
+                "status",
+                sqlmodel.sql.sqltypes.AutoString(length=50),
+                nullable=False,
+                server_default="provisioning",
+            ),
             sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
             sa.Column("created_at", sa.DateTime(), nullable=False),
             sa.PrimaryKeyConstraint("id"),

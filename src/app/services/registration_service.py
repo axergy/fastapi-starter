@@ -3,6 +3,7 @@
 This service does NOT require a tenant context because it creates a new tenant.
 """
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.core.config import get_settings
@@ -30,36 +31,44 @@ class RegistrationService:
     ) -> tuple[User, str]:
         """Register new user AND create a new tenant.
 
-        1. Create user in public.users
+        1. Create user in public.users (flush to get ID)
         2. Start TenantProvisioningWorkflow (creates tenant + membership)
+        3. Commit only if workflow starts successfully
 
         Returns (user, workflow_id).
-        Raises ValueError if email already exists or slug is taken.
+        Raises ValueError if email already exists, workflow fails to start, etc.
         """
-        # Check if email already exists
-        if await self.user_repo.exists_by_email(email):
-            raise ValueError("Email already registered")
-
-        # Create user in public schema
+        # Create user in public schema (flush to get user.id without committing)
         user = User(
             email=email,
             hashed_password=hash_password(password),
             full_name=full_name,
         )
         self.user_repo.add(user)
-        await self.session.commit()
-        await self.session.refresh(user)
+
+        try:
+            await self.session.flush()
+        except IntegrityError as e:
+            await self.session.rollback()
+            raise ValueError("Email already registered") from e
 
         # Start tenant provisioning workflow
         settings = get_settings()
         client = await get_temporal_client()
         workflow_id = f"tenant-provision-{tenant_slug}"
 
-        await client.start_workflow(
-            TenantProvisioningWorkflow.run,
-            args=[tenant_name, tenant_slug, str(user.id)],
-            id=workflow_id,
-            task_queue=settings.temporal_task_queue,
-        )
+        try:
+            await client.start_workflow(
+                TenantProvisioningWorkflow.run,
+                args=[tenant_name, tenant_slug, str(user.id)],
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+            )
+            # Only commit if workflow started successfully
+            await self.session.commit()
+        except Exception as e:
+            await self.session.rollback()
+            raise ValueError(f"Failed to start tenant provisioning: {e}") from e
 
+        await self.session.refresh(user)
         return user, workflow_id
