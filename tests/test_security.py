@@ -47,47 +47,37 @@ class TestSchemaNameValidation:
 
 
 class TestPasswordValidation:
-    """Tests for password strength validation."""
+    """Tests for password strength validation using zxcvbn."""
 
-    def test_valid_password(self):
-        """Strong passwords should be accepted."""
+    def test_strong_password_accepted(self):
+        """Strong passwords with high entropy should be accepted."""
+        # zxcvbn scores this as 4 (very strong)
         request = RegisterRequest(
             email="test@example.com",
-            password="SecurePass123",
+            password="correct-horse-battery-staple",
             full_name="Test User",
             tenant_name="Test Tenant",
             tenant_slug="test_tenant",
         )
-        assert request.password == "SecurePass123"
+        assert request.password == "correct-horse-battery-staple"
 
-    def test_password_missing_uppercase(self):
-        """Passwords without uppercase should be rejected."""
-        with pytest.raises(ValidationError, match="uppercase"):
+    def test_random_strong_password(self):
+        """Random-looking strong passwords should be accepted."""
+        request = RegisterRequest(
+            email="test@example.com",
+            password="Xk9$mP2vL#nQ8wR",
+            full_name="Test User",
+            tenant_name="Test Tenant",
+            tenant_slug="test_tenant",
+        )
+        assert len(request.password) > 8
+
+    def test_weak_password_rejected(self):
+        """Weak passwords should be rejected by zxcvbn."""
+        with pytest.raises(ValidationError, match="[Ww]eak password"):
             RegisterRequest(
                 email="test@example.com",
-                password="securepass123",
-                full_name="Test User",
-                tenant_name="Test Tenant",
-                tenant_slug="test_tenant",
-            )
-
-    def test_password_missing_lowercase(self):
-        """Passwords without lowercase should be rejected."""
-        with pytest.raises(ValidationError, match="lowercase"):
-            RegisterRequest(
-                email="test@example.com",
-                password="SECUREPASS123",
-                full_name="Test User",
-                tenant_name="Test Tenant",
-                tenant_slug="test_tenant",
-            )
-
-    def test_password_missing_digit(self):
-        """Passwords without digits should be rejected."""
-        with pytest.raises(ValidationError, match="digit"):
-            RegisterRequest(
-                email="test@example.com",
-                password="SecurePassword",
+                password="password123",
                 full_name="Test User",
                 tenant_name="Test Tenant",
                 tenant_slug="test_tenant",
@@ -95,10 +85,43 @@ class TestPasswordValidation:
 
     def test_common_password_rejected(self):
         """Common passwords should be rejected."""
-        with pytest.raises(ValidationError, match="too common"):
+        with pytest.raises(ValidationError, match="[Ww]eak password"):
             RegisterRequest(
                 email="test@example.com",
-                password="Password1",
+                password="qwerty12345",
+                full_name="Test User",
+                tenant_name="Test Tenant",
+                tenant_slug="test_tenant",
+            )
+
+    def test_short_simple_password_rejected(self):
+        """Short simple passwords should be rejected."""
+        with pytest.raises(ValidationError, match="[Ww]eak password"):
+            RegisterRequest(
+                email="test@example.com",
+                password="abcd1234",
+                full_name="Test User",
+                tenant_name="Test Tenant",
+                tenant_slug="test_tenant",
+            )
+
+    def test_repeated_characters_rejected(self):
+        """Passwords with repeated patterns should be rejected."""
+        with pytest.raises(ValidationError, match="[Ww]eak password"):
+            RegisterRequest(
+                email="test@example.com",
+                password="aaaaaaaa",
+                full_name="Test User",
+                tenant_name="Test Tenant",
+                tenant_slug="test_tenant",
+            )
+
+    def test_keyboard_pattern_rejected(self):
+        """Keyboard patterns should be rejected."""
+        with pytest.raises(ValidationError, match="[Ww]eak password"):
+            RegisterRequest(
+                email="test@example.com",
+                password="qwertyuiop",
                 full_name="Test User",
                 tenant_name="Test Tenant",
                 tenant_slug="test_tenant",

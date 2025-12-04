@@ -1,8 +1,12 @@
 import re
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from zxcvbn import zxcvbn
 
 from src.app.schemas.user import UserRead
+
+# Minimum zxcvbn score (0-4 scale): 3 = "safely unguessable"
+MIN_PASSWORD_SCORE = 3
 
 
 class LoginRequest(BaseModel):
@@ -37,18 +41,24 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
-        """Ensure password has minimum complexity."""
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not re.search(r"\d", v):
-            raise ValueError("Password must contain at least one digit")
+        """Validate password strength using zxcvbn entropy estimation."""
+        result = zxcvbn(v)
+        score = result["score"]  # 0-4 scale
 
-        # Check against common passwords
-        common_passwords = ["password", "12345678", "qwerty123", "Password1"]
-        if v.lower() in [p.lower() for p in common_passwords]:
-            raise ValueError("Password is too common")
+        if score < MIN_PASSWORD_SCORE:
+            # Get helpful feedback from zxcvbn
+            feedback = result.get("feedback", {})
+            warning = feedback.get("warning", "")
+            suggestions = feedback.get("suggestions", [])
+
+            if warning:
+                raise ValueError(f"Weak password: {warning}")
+            elif suggestions:
+                raise ValueError(f"Weak password: {suggestions[0]}")
+            else:
+                raise ValueError(
+                    "Password is too weak. Use a longer password with a mix of characters."
+                )
 
         return v
 
