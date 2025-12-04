@@ -1,11 +1,7 @@
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-from alembic import command
-from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.app.core.migrations import run_migrations_async
 from src.app.models.public import Tenant
 
 
@@ -20,8 +16,7 @@ class TenantService:
         Create a new tenant with its own schema.
 
         1. Creates tenant record in public schema
-        2. Creates PostgreSQL schema for tenant
-        3. Runs migrations for the new schema
+        2. Runs migrations which create the schema and tables
         """
         result = await self.session.execute(select(Tenant).where(Tenant.slug == slug))
         if result.scalar_one_or_none() is not None:
@@ -33,20 +28,9 @@ class TenantService:
         await self.session.refresh(tenant)
 
         # Run migrations which will create the schema and tables
-        await self._run_migrations_async(tenant.schema_name)
+        await run_migrations_async(tenant.schema_name)
 
         return tenant
-
-    async def _run_migrations_async(self, schema_name: str) -> None:
-        """Run Alembic migrations in a thread pool to avoid event loop conflicts."""
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as pool:
-            await loop.run_in_executor(pool, self._run_migrations_sync, schema_name)
-
-    def _run_migrations_sync(self, schema_name: str) -> None:
-        """Run Alembic migrations for a specific schema (sync)."""
-        alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head", tag=schema_name)
 
     async def get_by_slug(self, slug: str) -> Tenant | None:
         """Get tenant by slug."""

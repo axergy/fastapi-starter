@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 import sqlmodel
+
 from alembic import context, op
 
 revision: str = "001"
@@ -34,7 +35,9 @@ def upgrade() -> None:
             ),
             sa.Column("full_name", sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
             sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-            sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+            sa.Column(
+                "is_superuser", sa.Boolean(), nullable=False, server_default=sa.text("false")
+            ),
             sa.Column("created_at", sa.DateTime(), nullable=False),
             sa.Column("updated_at", sa.DateTime(), nullable=False),
             sa.PrimaryKeyConstraint("id"),
@@ -55,7 +58,9 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
         )
         op.create_index("ix_refresh_tokens_user_id", "refresh_tokens", ["user_id"], unique=False)
-        op.create_index("ix_refresh_tokens_token_hash", "refresh_tokens", ["token_hash"], unique=True)
+        op.create_index(
+            "ix_refresh_tokens_token_hash", "refresh_tokens", ["token_hash"], unique=True
+        )
     else:
         # Public schema - create tenants table
         op.create_table(

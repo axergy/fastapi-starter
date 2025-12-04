@@ -1,4 +1,6 @@
+import asyncio
 from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
@@ -9,6 +11,7 @@ from sqlalchemy.pool import NullPool
 
 from src.app.core import db
 from src.app.core.config import get_settings
+from src.app.core.migrations import run_migrations_sync
 from src.app.main import create_app
 
 
@@ -28,56 +31,32 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
 @pytest.fixture
 async def test_tenant(engine: AsyncEngine) -> AsyncGenerator[str, None]:
     """
-    Create isolated tenant schema for each test.
-    Automatically cleaned up after test.
+    Create isolated tenant schema for each test using Alembic migrations.
+    This ensures tests use the exact same schema as production.
     """
     tenant_slug = f"test_{uuid4().hex[:8]}"
     schema_name = f"tenant_{tenant_slug}"
 
-    # Create schema and tables
+    # Register tenant in public schema first
     async with engine.connect() as conn:
-        await conn.execute(text(f"CREATE SCHEMA {schema_name}"))
-        await conn.execute(text(f"SET search_path TO {schema_name}"))
         await conn.execute(
             text("""
-            CREATE TABLE users (
-                id UUID PRIMARY KEY,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                hashed_password VARCHAR(255) NOT NULL,
-                full_name VARCHAR(100) NOT NULL,
-                is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at TIMESTAMP NOT NULL,
-                updated_at TIMESTAMP NOT NULL
-            )
-        """)
-        )
-        await conn.execute(
-            text("""
-            CREATE TABLE refresh_tokens (
-                id UUID PRIMARY KEY,
-                user_id UUID NOT NULL REFERENCES users(id),
-                token_hash VARCHAR(255) UNIQUE NOT NULL,
-                expires_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP NOT NULL,
-                revoked BOOLEAN NOT NULL DEFAULT FALSE
-            )
-        """)
-        )
-        await conn.execute(text("SET search_path TO public"))
-        await conn.execute(
-            text("""
-            INSERT INTO tenants (id, name, slug, is_active, created_at)
-            VALUES (gen_random_uuid(), :name, :slug, true, now())
-            ON CONFLICT (slug) DO NOTHING
-        """),
-            {"name": f"Test Tenant {tenant_slug}", "slug": tenant_slug},
+                INSERT INTO tenants (id, name, slug, is_active, created_at)
+                VALUES (gen_random_uuid(), :name, :slug, true, now())
+                ON CONFLICT (slug) DO NOTHING
+            """),
+            {"name": f"Test {tenant_slug}", "slug": tenant_slug},
         )
         await conn.commit()
 
+    # Run migrations for tenant schema (creates schema + tables)
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as pool:
+        await loop.run_in_executor(pool, run_migrations_sync, schema_name)
+
     yield tenant_slug
 
-    # Cleanup
+    # Cleanup: drop schema (CASCADE removes all tables + alembic_version)
     async with engine.connect() as conn:
         await conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
         await conn.execute(
