@@ -40,13 +40,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 )
 @limiter.limit("5/minute")
 async def login(
-    http_request: Request, request: LoginRequest, service: AuthServiceDep
+    request: Request, login_data: LoginRequest, service: AuthServiceDep
 ) -> LoginResponse:
     """Authenticate user and return tokens.
 
     Requires X-Tenant-ID header. User must have membership in the tenant.
     """
-    result = await service.authenticate(request.email, request.password)
+    result = await service.authenticate(login_data.email, login_data.password)
 
     if result is None:
         raise HTTPException(
@@ -115,8 +115,8 @@ async def refresh(request: RefreshRequest, service: AuthServiceDep) -> RefreshRe
 )
 @limiter.limit("3/hour")
 async def register(
-    http_request: Request,
-    request: RegisterRequest,
+    request: Request,
+    register_data: RegisterRequest,
     service: RegistrationServiceDep,
 ) -> RegisterResponse:
     """Register new user AND create a new tenant.
@@ -126,11 +126,11 @@ async def register(
     """
     try:
         user, workflow_id = await service.register(
-            email=request.email,
-            password=request.password,
-            full_name=request.full_name,
-            tenant_name=request.tenant_name,
-            tenant_slug=request.tenant_slug,
+            email=register_data.email,
+            password=register_data.password,
+            full_name=register_data.full_name,
+            tenant_name=register_data.tenant_name,
+            tenant_slug=register_data.tenant_slug,
         )
     except ValueError as e:
         raise HTTPException(
@@ -141,7 +141,7 @@ async def register(
     return RegisterResponse(
         user=UserRead.model_validate(user),
         workflow_id=workflow_id,
-        tenant_slug=request.tenant_slug,
+        tenant_slug=register_data.tenant_slug,
     )
 
 

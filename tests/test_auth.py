@@ -27,7 +27,7 @@ class TestRegistration:
                 "/api/v1/auth/register",
                 json={
                     "email": "newuser@example.com",
-                    "password": "securepassword123",
+                    "password": "correct-horse-battery-staple",
                     "full_name": "New User",
                     "tenant_name": "New Company",
                     "tenant_slug": "new_company",
@@ -57,7 +57,7 @@ class TestRegistration:
                 "/api/v1/auth/register",
                 json={
                     "email": "duplicate@example.com",
-                    "password": "securepassword123",
+                    "password": "correct-horse-battery-staple",
                     "full_name": "First User",
                     "tenant_name": "Company One",
                     "tenant_slug": "company_one",
@@ -69,7 +69,7 @@ class TestRegistration:
                 "/api/v1/auth/register",
                 json={
                     "email": "duplicate@example.com",
-                    "password": "differentpassword123",
+                    "password": "purple-monkey-dishwasher-99",
                     "full_name": "Second User",
                     "tenant_name": "Company Two",
                     "tenant_slug": "company_two",
@@ -86,7 +86,7 @@ class TestRegistration:
             "/api/v1/auth/register",
             json={
                 "email": "test@example.com",
-                "password": "securepassword123",
+                "password": "correct-horse-battery-staple",
                 "full_name": "Test User",
                 "tenant_name": "Test Company",
                 "tenant_slug": "Invalid-Slug!",  # Invalid: uppercase, hyphen, special char

@@ -20,11 +20,17 @@ from src.app.main import create_app
 
 @pytest.fixture(scope="function")
 async def engine() -> AsyncGenerator[AsyncEngine, None]:
-    """Create test database engine per test to avoid connection sharing issues."""
+    """Create test database engine and ensure public schema migrations are applied."""
     await db.dispose_engine()
 
     settings = get_settings()
     test_engine = create_async_engine(settings.database_url, poolclass=NullPool)
+
+    # Run public schema migrations to ensure tables exist
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as pool:
+        await loop.run_in_executor(pool, run_migrations_sync, None)
+
     yield test_engine
     await test_engine.dispose()
 

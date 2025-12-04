@@ -54,9 +54,9 @@ class TenantService:
             self.tenant_repo.add(tenant)
             await self.session.commit()
             await self.session.refresh(tenant)
-        except IntegrityError:
+        except IntegrityError as e:
             await self.session.rollback()
-            raise ValueError(f"Tenant with slug '{slug}' already exists")
+            raise ValueError(f"Tenant with slug '{slug}' already exists") from e
 
         # Create workflow execution record before starting workflow
         workflow_id = self.get_workflow_id(slug)

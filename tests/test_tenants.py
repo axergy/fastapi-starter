@@ -7,7 +7,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_health_check() -> None:
-    """Test health check endpoint."""
+    """Test health check endpoint returns detailed status."""
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
@@ -15,4 +15,7 @@ async def test_health_check() -> None:
         response = await client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    data = response.json()
+    assert data["status"] in ("healthy", "degraded")
+    assert "database" in data
+    assert "temporal" in data

@@ -8,7 +8,7 @@ Create Date: 2025-12-04 00:00:00.000000
 
 from collections.abc import Sequence
 
-from alembic import op
+from alembic import context, op
 
 revision: str = "003"
 down_revision: str | None = "002"
@@ -17,6 +17,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # These indexes are for public schema tables only
+    # Skip if running tenant schema migrations (tag argument present)
+    if context.get_tag_argument():
+        return
+
     # For refresh_tokens - improves token refresh queries
     # When users refresh their tokens, we query by both user_id and tenant_id
     op.create_index(
@@ -46,6 +51,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Skip if running tenant schema migrations
+    if context.get_tag_argument():
+        return
+
     op.drop_index("ix_refresh_tokens_user_tenant", table_name="refresh_tokens")
     op.drop_index("ix_membership_user_tenant_active", table_name="user_tenant_membership")
     op.drop_index("ix_membership_tenant_active", table_name="user_tenant_membership")

@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
 
         # Check Temporal (optional - don't fail if unavailable)
         try:
-            client = await get_temporal_client()
+            await get_temporal_client()
             health_status["temporal"] = "healthy"
         except Exception as e:
             health_status["temporal"] = f"unhealthy: {str(e)}"
