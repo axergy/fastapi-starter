@@ -1,10 +1,8 @@
 """Authentication endpoints - Lobby Pattern."""
 
-from typing import Annotated
+from fastapi import APIRouter, HTTPException, status
 
-from fastapi import APIRouter, Depends, HTTPException, status
-
-from src.app.api.dependencies import AuthServiceDep, DBSession, UserRepo
+from src.app.api.dependencies import AuthServiceDep, RegistrationServiceDep
 from src.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -14,17 +12,8 @@ from src.app.schemas.auth import (
     RegisterResponse,
 )
 from src.app.schemas.user import UserRead
-from src.app.services.registration_service import RegistrationService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def get_registration_service(user_repo: UserRepo, session: DBSession) -> RegistrationService:
-    """Create registration service (no tenant context required)."""
-    return RegistrationService(user_repo, session)
-
-
-RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
 
 
 @router.post("/login", response_model=LoginResponse)

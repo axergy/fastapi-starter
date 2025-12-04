@@ -16,6 +16,7 @@ from src.app.repositories.tenant_repository import TenantRepository
 from src.app.repositories.token_repository import RefreshTokenRepository
 from src.app.repositories.user_repository import UserRepository
 from src.app.services.auth_service import AuthService, TokenType
+from src.app.services.registration_service import RegistrationService
 from src.app.services.tenant_service import TenantService
 from src.app.services.user_service import UserService
 
@@ -148,9 +149,15 @@ def get_tenant_service(tenant_repo: TenantRepo, session: DBSession) -> TenantSer
     return TenantService(tenant_repo, session)
 
 
+def get_registration_service(user_repo: UserRepo, session: DBSession) -> RegistrationService:
+    """Get registration service (no tenant context required)."""
+    return RegistrationService(user_repo, session)
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 TenantServiceDep = Annotated[TenantService, Depends(get_tenant_service)]
+RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
 
 
 # =============================================================================
