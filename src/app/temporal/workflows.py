@@ -20,10 +20,12 @@ with workflow.unsafe.imports_passed_through():
         CreateTenantOutput,
         RunMigrationsInput,
         SendEmailInput,
+        UpdateTenantStatusInput,
         create_stripe_customer,
         create_tenant_record,
         run_tenant_migrations,
         send_welcome_email,
+        update_tenant_status,
     )
 
 
@@ -76,9 +78,11 @@ class UserOnboardingWorkflow:
 class TenantProvisioningWorkflow:
     """
     Provision a new tenant:
-    1. Create tenant record in public schema
+    1. Create tenant record in public schema (status="provisioning")
     2. Run Alembic migrations to create tenant schema + tables
+    3. Update tenant status to "ready"
 
+    On failure: Updates tenant status to "failed".
     Idempotent: Safe to retry - activities handle existing tenants.
     """
 
@@ -94,32 +98,60 @@ class TenantProvisioningWorkflow:
         Returns:
             tenant_id: UUID of the created/existing tenant
         """
-        # Step 1: Create tenant record
-        result: CreateTenantOutput = await workflow.execute_activity(
-            create_tenant_record,
-            CreateTenantInput(name=name, slug=slug),
-            start_to_close_timeout=timedelta(seconds=30),
-            retry_policy=RetryPolicy(
-                maximum_attempts=3,
-                initial_interval=timedelta(seconds=1),
-            ),
-        )
+        result: CreateTenantOutput | None = None
 
-        workflow.logger.info(
-            f"Tenant record created: {result.tenant_id}, schema: {result.schema_name}"
-        )
+        try:
+            # Step 1: Create tenant record (status="provisioning" by default)
+            result = await workflow.execute_activity(
+                create_tenant_record,
+                CreateTenantInput(name=name, slug=slug),
+                start_to_close_timeout=timedelta(seconds=30),
+                retry_policy=RetryPolicy(
+                    maximum_attempts=3,
+                    initial_interval=timedelta(seconds=1),
+                ),
+            )
 
-        # Step 2: Run migrations for tenant schema
-        await workflow.execute_activity(
-            run_tenant_migrations,
-            RunMigrationsInput(schema_name=result.schema_name),
-            start_to_close_timeout=timedelta(minutes=5),
-            retry_policy=RetryPolicy(
-                maximum_attempts=3,
-                initial_interval=timedelta(seconds=2),
-            ),
-        )
+            workflow.logger.info(
+                f"Tenant record created: {result.tenant_id}, schema: {result.schema_name}"
+            )
 
-        workflow.logger.info(f"Tenant provisioning complete: {result.tenant_id}")
+            # Step 2: Run migrations for tenant schema
+            await workflow.execute_activity(
+                run_tenant_migrations,
+                RunMigrationsInput(schema_name=result.schema_name),
+                start_to_close_timeout=timedelta(minutes=5),
+                retry_policy=RetryPolicy(
+                    maximum_attempts=3,
+                    initial_interval=timedelta(seconds=2),
+                ),
+            )
 
-        return result.tenant_id
+            # Step 3: Mark tenant as ready
+            await workflow.execute_activity(
+                update_tenant_status,
+                UpdateTenantStatusInput(tenant_id=result.tenant_id, status="ready"),
+                start_to_close_timeout=timedelta(seconds=10),
+                retry_policy=RetryPolicy(
+                    maximum_attempts=3,
+                    initial_interval=timedelta(seconds=1),
+                ),
+            )
+
+            workflow.logger.info(f"Tenant provisioning complete: {result.tenant_id}")
+            return result.tenant_id
+
+        except Exception as e:
+            # Mark tenant as failed if we have a tenant_id
+            if result is not None:
+                workflow.logger.error(f"Provisioning failed, marking tenant as failed: {e}")
+                await workflow.execute_activity(
+                    update_tenant_status,
+                    UpdateTenantStatusInput(tenant_id=result.tenant_id, status="failed"),
+                    start_to_close_timeout=timedelta(seconds=10),
+                    retry_policy=RetryPolicy(
+                        maximum_attempts=3,
+                        initial_interval=timedelta(seconds=1),
+                    ),
+                )
+            raise

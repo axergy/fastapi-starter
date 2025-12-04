@@ -1,7 +1,6 @@
-from hashlib import sha256
+"""Authentication service - handles login, token refresh, registration."""
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from hashlib import sha256
 
 from src.app.core.security import (
     create_access_token,
@@ -10,22 +9,35 @@ from src.app.core.security import (
     hash_password,
     verify_password,
 )
-from src.app.models.base import utc_now
 from src.app.models.tenant import RefreshToken, User
+from src.app.repositories.token_repository import RefreshTokenRepository
+from src.app.repositories.user_repository import UserRepository
 from src.app.schemas.auth import LoginResponse
+
+
+class TokenType:
+    """Token type constants."""
+
+    ACCESS = "access"
+    REFRESH = "refresh"
 
 
 class AuthService:
     """Authentication service - handles login, token refresh, registration."""
 
-    def __init__(self, session: AsyncSession, tenant_id: str):
-        self.session = session
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        token_repo: RefreshTokenRepository,
+        tenant_id: str,
+    ):
+        self.user_repo = user_repo
+        self.token_repo = token_repo
         self.tenant_id = tenant_id
 
     async def authenticate(self, email: str, password: str) -> LoginResponse | None:
         """Authenticate user and return tokens. Returns None if authentication fails."""
-        result = await self.session.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
+        user = await self.user_repo.get_by_email(email)
 
         if user is None:
             return None
@@ -45,8 +57,8 @@ class AuthService:
             token_hash=token_hash,
             expires_at=expires_at,
         )
-        self.session.add(db_token)
-        await self.session.commit()
+        await self.token_repo.add(db_token)
+        await self.token_repo.commit()
 
         return LoginResponse(
             access_token=access_token,
@@ -59,7 +71,7 @@ class AuthService:
         if payload is None:
             return None
 
-        if payload.get("type") != "refresh":
+        if payload.get("type") != TokenType.REFRESH:
             return None
 
         user_id = payload.get("sub")
@@ -67,14 +79,7 @@ class AuthService:
             return None
 
         token_hash = sha256(refresh_token.encode()).hexdigest()
-        result = await self.session.execute(
-            select(RefreshToken).where(
-                RefreshToken.token_hash == token_hash,
-                RefreshToken.revoked == False,  # noqa: E712
-                RefreshToken.expires_at > utc_now(),
-            )
-        )
-        db_token = result.scalar_one_or_none()
+        db_token = await self.token_repo.get_valid_by_hash(token_hash)
 
         if db_token is None:
             return None
@@ -84,16 +89,13 @@ class AuthService:
     async def revoke_refresh_token(self, refresh_token: str) -> bool:
         """Revoke a refresh token. Returns True if successful."""
         token_hash = sha256(refresh_token.encode()).hexdigest()
-        result = await self.session.execute(
-            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
-        )
-        db_token = result.scalar_one_or_none()
+        db_token = await self.token_repo.get_by_hash(token_hash)
 
         if db_token is None:
             return False
 
         db_token.revoked = True
-        await self.session.commit()
+        await self.token_repo.commit()
         return True
 
     async def register_user(
@@ -103,8 +105,7 @@ class AuthService:
         full_name: str,
     ) -> User | None:
         """Register new user. Returns None if email already exists."""
-        result = await self.session.execute(select(User).where(User.email == email))
-        if result.scalar_one_or_none() is not None:
+        if await self.user_repo.exists_by_email(email):
             return None
 
         user = User(
@@ -112,8 +113,7 @@ class AuthService:
             hashed_password=hash_password(password),
             full_name=full_name,
         )
-        self.session.add(user)
-        await self.session.commit()
-        await self.session.refresh(user)
+        await self.user_repo.add(user)
+        await self.user_repo.commit()
 
         return user

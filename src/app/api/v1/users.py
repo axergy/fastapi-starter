@@ -1,6 +1,9 @@
+"""User management endpoints."""
+
 from fastapi import APIRouter
 
 from src.app.api.dependencies import CurrentUser, DBSession
+from src.app.repositories.user_repository import UserRepository
 from src.app.schemas.user import UserRead, UserUpdate
 from src.app.services.user_service import UserService
 
@@ -20,6 +23,7 @@ async def update_current_user(
     session: DBSession,
 ) -> UserRead:
     """Update current user."""
-    service = UserService(session)
+    user_repo = UserRepository(session)
+    service = UserService(user_repo)
     updated_user = await service.update(current_user, data)
     return UserRead.model_validate(updated_user)

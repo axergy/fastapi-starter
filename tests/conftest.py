@@ -40,11 +40,13 @@ async def test_tenant(engine: AsyncEngine) -> AsyncGenerator[str, None]:
     # Register tenant in public schema first
     async with engine.connect() as conn:
         await conn.execute(
-            text("""
+            text(
+                """
                 INSERT INTO tenants (id, name, slug, is_active, created_at)
                 VALUES (gen_random_uuid(), :name, :slug, true, now())
                 ON CONFLICT (slug) DO NOTHING
-            """),
+            """
+            ),
             {"name": f"Test {tenant_slug}", "slug": tenant_slug},
         )
         await conn.commit()

@@ -14,7 +14,7 @@ worker:
 
 # Run tests
 test:
-	uv run pytest
+	uv run pytest  -n auto --dist=loadscope
 
 # Run tests with coverage
 test-cov:

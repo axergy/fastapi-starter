@@ -1,11 +1,23 @@
 """Reusable migration runner for both production and tests."""
 
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+import os
+from pathlib import Path
 
 from alembic.config import Config
 
 from alembic import command
+
+
+def _get_alembic_config() -> Config:
+    """Get Alembic config with correct path resolution."""
+    # Try current directory first (for Docker), then project root
+    if os.path.exists("alembic.ini"):
+        return Config("alembic.ini")
+
+    # Fallback to project root (when running from src/app/...)
+    project_root = Path(__file__).parent.parent.parent.parent
+    config_path = project_root / "alembic.ini"
+    return Config(str(config_path))
 
 
 def run_migrations_sync(schema_name: str | None = None) -> None:
@@ -15,18 +27,8 @@ def run_migrations_sync(schema_name: str | None = None) -> None:
         schema_name: If provided, runs tenant migrations for this schema.
                     If None, runs public schema migrations.
     """
-    alembic_cfg = Config("alembic.ini")
+    alembic_cfg = _get_alembic_config()
     if schema_name:
         command.upgrade(alembic_cfg, "head", tag=schema_name)
     else:
         command.upgrade(alembic_cfg, "head")
-
-
-async def run_migrations_async(schema_name: str | None = None) -> None:
-    """Run Alembic migrations from async context.
-
-    Uses ThreadPoolExecutor to avoid event loop conflicts with Alembic.
-    """
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as pool:
-        await loop.run_in_executor(pool, run_migrations_sync, schema_name)

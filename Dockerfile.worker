@@ -18,6 +18,7 @@ COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 COPY src ./src
+COPY alembic.ini ./
 
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser

@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException, status
-from temporalio.client import WorkflowExecutionStatus
+"""Tenant management endpoints."""
 
-from src.app.core.config import get_settings
+from fastapi import APIRouter, HTTPException, status
+
 from src.app.core.db import get_public_session
+from src.app.models.public import TenantStatus
+from src.app.repositories.tenant_repository import TenantRepository
 from src.app.schemas.tenant import (
     TenantCreate,
     TenantProvisioningResponse,
@@ -10,15 +12,8 @@ from src.app.schemas.tenant import (
     TenantStatusResponse,
 )
 from src.app.services.tenant_service import TenantService
-from src.app.temporal.client import get_temporal_client
-from src.app.temporal.workflows import TenantProvisioningWorkflow
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
-
-
-def _get_workflow_id(slug: str) -> str:
-    """Generate deterministic workflow ID for a tenant slug."""
-    return f"tenant-provision-{slug}"
 
 
 @router.post("", response_model=TenantProvisioningResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -28,27 +23,16 @@ async def create_tenant(request: TenantCreate) -> TenantProvisioningResponse:
 
     Returns immediately with workflow ID. Poll /tenants/{slug}/status for progress.
     """
-    settings = get_settings()
-    client = await get_temporal_client()
-    workflow_id = _get_workflow_id(request.slug)
-
-    # Check if tenant already exists
     async with get_public_session() as session:
-        service = TenantService(session)
-        existing = await service.get_by_slug(request.slug)
-        if existing:
+        tenant_repo = TenantRepository(session)
+        service = TenantService(tenant_repo)
+        try:
+            workflow_id = await service.create_tenant(request.name, request.slug)
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Tenant with slug '{request.slug}' already exists",
-            )
-
-    # Start the provisioning workflow
-    await client.start_workflow(
-        TenantProvisioningWorkflow.run,
-        args=[request.name, request.slug],
-        id=workflow_id,
-        task_queue=settings.temporal_task_queue,
-    )
+                detail=str(e),
+            ) from e
 
     return TenantProvisioningResponse(
         workflow_id=workflow_id,
@@ -60,74 +44,38 @@ async def create_tenant(request: TenantCreate) -> TenantProvisioningResponse:
 @router.get("/{slug}/status", response_model=TenantStatusResponse)
 async def get_tenant_status(slug: str) -> TenantStatusResponse:
     """
-    Check tenant provisioning status.
+    Check tenant provisioning status from database.
 
     Returns:
-    - provisioning: Workflow is still running
+    - provisioning: Tenant is being provisioned
     - ready: Tenant is provisioned and ready to use
-    - failed: Provisioning failed (check error field)
+    - failed: Provisioning failed
     """
-    client = await get_temporal_client()
-    workflow_id = _get_workflow_id(slug)
-
-    # First check if tenant exists in database
     async with get_public_session() as session:
-        service = TenantService(session)
+        tenant_repo = TenantRepository(session)
+        service = TenantService(tenant_repo)
         tenant = await service.get_by_slug(slug)
 
-    # Try to get workflow handle
-    handle = client.get_workflow_handle(workflow_id)
-
-    try:
-        description = await handle.describe()
-        workflow_status = description.status
-
-        if workflow_status == WorkflowExecutionStatus.COMPLETED:
-            if tenant:
-                return TenantStatusResponse(
-                    status="ready",
-                    tenant=TenantRead.model_validate(tenant),
-                )
-            # Workflow completed but tenant not found (shouldn't happen)
-            return TenantStatusResponse(
-                status="failed",
-                error="Workflow completed but tenant not found",
+        if not tenant:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tenant '{slug}' not found",
             )
 
-        elif workflow_status == WorkflowExecutionStatus.RUNNING:
-            return TenantStatusResponse(status="provisioning")
-
-        elif workflow_status in (
-            WorkflowExecutionStatus.FAILED,
-            WorkflowExecutionStatus.CANCELED,
-            WorkflowExecutionStatus.TERMINATED,
-        ):
-            return TenantStatusResponse(
-                status="failed",
-                error=f"Workflow {workflow_status.name}",
-            )
-
-        else:
-            return TenantStatusResponse(status="provisioning")
-
-    except Exception:
-        # Workflow not found - check if tenant exists anyway
-        if tenant:
-            return TenantStatusResponse(
-                status="ready",
-                tenant=TenantRead.model_validate(tenant),
-            )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No provisioning workflow found for tenant '{slug}'",
-        ) from None
+        is_ready = tenant.status == TenantStatus.READY.value
+        tenant_read = TenantRead.model_validate(tenant) if is_ready else None
+        return TenantStatusResponse(
+            status=tenant.status,
+            tenant=tenant_read,
+        )
 
 
 @router.get("", response_model=list[TenantRead])
 async def list_tenants() -> list[TenantRead]:
     """List all active tenants."""
     async with get_public_session() as session:
-        service = TenantService(session)
+        tenant_repo = TenantRepository(session)
+        service = TenantService(tenant_repo)
         tenants = await service.list_tenants()
         return [TenantRead.model_validate(t) for t in tenants]
 
@@ -136,7 +84,8 @@ async def list_tenants() -> list[TenantRead]:
 async def get_tenant(slug: str) -> TenantRead:
     """Get tenant by slug."""
     async with get_public_session() as session:
-        service = TenantService(session)
+        tenant_repo = TenantRepository(session)
+        service = TenantService(tenant_repo)
         tenant = await service.get_by_slug(slug)
         if tenant is None:
             raise HTTPException(

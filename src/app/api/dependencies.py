@@ -10,6 +10,7 @@ from src.app.core.db import get_public_session, get_tenant_session
 from src.app.core.security import decode_token
 from src.app.models.public import Tenant
 from src.app.models.tenant import User
+from src.app.services.auth_service import TokenType
 
 
 async def get_tenant_id_from_header(
@@ -85,7 +86,7 @@ async def get_current_user(
             detail="Invalid or expired token",
         )
 
-    if payload.get("type") != "access":
+    if payload.get("type") != TokenType.ACCESS:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type",

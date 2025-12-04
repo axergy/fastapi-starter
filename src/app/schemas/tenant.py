@@ -21,6 +21,7 @@ class TenantRead(BaseModel):
     id: UUID
     name: str
     slug: str
+    status: str
     is_active: bool
     created_at: datetime
 

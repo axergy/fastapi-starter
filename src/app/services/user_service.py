@@ -1,29 +1,27 @@
+"""User management service."""
+
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
-
 from src.app.core.security import hash_password
 from src.app.models.tenant import User
+from src.app.repositories.user_repository import UserRepository
 from src.app.schemas.user import UserUpdate
 
 
 class UserService:
-    """User management service."""
+    """User management service - business logic only."""
 
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, user_repo: UserRepository):
+        self.user_repo = user_repo
 
     async def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID."""
-        result = await self.session.execute(select(User).where(User.id == user_id))
-        return result.scalar_one_or_none()
+        return await self.user_repo.get_by_id(user_id)
 
     async def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
-        result = await self.session.execute(select(User).where(User.email == email))
-        return result.scalar_one_or_none()
+        return await self.user_repo.get_by_email(email)
 
     async def update(self, user: User, data: UserUpdate) -> User:
         """Update user with provided data."""
@@ -36,14 +34,12 @@ class UserService:
             setattr(user, field, value)
 
         user.updated_at = datetime.now(UTC)
-        await self.session.commit()
-        await self.session.refresh(user)
-        return user
+        await self.user_repo.commit()
+        return await self.user_repo.refresh(user)
 
     async def deactivate(self, user: User) -> User:
         """Deactivate user account."""
         user.is_active = False
         user.updated_at = datetime.now(UTC)
-        await self.session.commit()
-        await self.session.refresh(user)
-        return user
+        await self.user_repo.commit()
+        return await self.user_repo.refresh(user)

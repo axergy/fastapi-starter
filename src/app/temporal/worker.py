@@ -15,6 +15,7 @@ from src.app.temporal.activities import (
     create_tenant_record,
     run_tenant_migrations,
     send_welcome_email,
+    update_tenant_status,
 )
 from src.app.temporal.workflows import TenantProvisioningWorkflow, UserOnboardingWorkflow
 
@@ -33,6 +34,7 @@ async def main() -> None:
             send_welcome_email,
             create_tenant_record,
             run_tenant_migrations,
+            update_tenant_status,
         ],
     )
 

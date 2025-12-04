@@ -1,9 +1,7 @@
-import asyncio
 import os
 from logging.config import fileConfig
 
-from sqlalchemy import pool, text
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy import create_engine, pool, text
 from sqlmodel import SQLModel
 
 from alembic import context
@@ -21,7 +19,10 @@ target_metadata = SQLModel.metadata
 
 
 def get_url() -> str:
-    return get_settings().database_url
+    """Get sync database URL (convert asyncpg to psycopg2)."""
+    url = get_settings().database_url
+    # Convert async URL to sync for Alembic
+    return url.replace("+asyncpg", "")
 
 
 def run_migrations_offline() -> None:
@@ -43,7 +44,7 @@ def do_run_migrations(connection, schema: str | None = None) -> None:
     if schema:
         # Create schema and set search_path for tenant migrations
         connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
-        connection.execute(text(f"SET search_path TO {schema}, public"))
+        connection.execute(text(f"SET search_path TO {schema}"))
         connection.commit()
         context.configure(
             connection=connection,
@@ -63,29 +64,22 @@ def do_run_migrations(connection, schema: str | None = None) -> None:
         context.run_migrations()
 
 
-async def run_async_migrations() -> None:
-    """Run migrations in 'online' mode with async engine."""
-    configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = get_url()
+def run_migrations_online() -> None:
+    """Run migrations in 'online' mode with sync engine."""
+    url = get_url()
 
-    connectable = async_engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
+    connectable = create_engine(
+        url,
         poolclass=pool.NullPool,
     )
 
     # Get schema from alembic command-line tag (--tag)
     schema = context.get_tag_argument()
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations, schema)
+    with connectable.connect() as connection:
+        do_run_migrations(connection, schema)
 
-    await connectable.dispose()
-
-
-def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
-    asyncio.run(run_async_migrations())
+    connectable.dispose()
 
 
 if context.is_offline_mode():

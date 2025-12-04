@@ -8,6 +8,7 @@ Activities should be:
 """
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from sqlalchemy import create_engine
 from sqlmodel import Session, select
@@ -150,3 +151,36 @@ async def run_tenant_migrations(input: RunMigrationsInput) -> bool:
 
     activity.logger.info(f"Migrations complete for schema: {input.schema_name}")
     return True
+
+
+@dataclass
+class UpdateTenantStatusInput:
+    tenant_id: str
+    status: str  # "provisioning", "ready", "failed"
+
+
+@activity.defn
+async def update_tenant_status(input: UpdateTenantStatusInput) -> bool:
+    """
+    Update tenant status in database.
+
+    Idempotent: Safe to retry - just sets the status value.
+    """
+    activity.logger.info(f"Updating tenant {input.tenant_id} status to: {input.status}")
+
+    engine = _get_sync_engine()
+    with Session(engine) as session:
+        # Convert string tenant_id to UUID for comparison
+        tenant_uuid = UUID(input.tenant_id)
+        stmt = select(Tenant).where(Tenant.id == tenant_uuid)
+        tenant = session.scalars(stmt).first()
+
+        if not tenant:
+            activity.logger.error(f"Tenant {input.tenant_id} not found")
+            return False
+
+        tenant.status = input.status
+        session.commit()
+
+        activity.logger.info(f"Tenant {input.tenant_id} status updated to {input.status}")
+        return True
