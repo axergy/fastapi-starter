@@ -206,3 +206,22 @@ async def require_admin_role(
 
 
 AdminUser = Annotated[User, Depends(require_admin_role)]
+
+
+async def require_superuser(
+    user: AuthenticatedUser,
+) -> User:
+    """Require the current user to be a superuser.
+
+    This dependency should be used for platform-wide admin endpoints.
+    Does not require tenant context - superusers operate across all tenants.
+    """
+    if not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superuser privileges required",
+        )
+    return user
+
+
+SuperUser = Annotated[User, Depends(require_superuser)]

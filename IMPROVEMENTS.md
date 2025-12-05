@@ -56,14 +56,14 @@ Validated code review findings for the FastAPI SaaS Starter project.
 - Invite emails via Resend API
 **Files:** `src/app/api/v1/invites.py`, `src/app/services/invite_service.py`, `src/app/schemas/invite.py`
 
-### 7. Superuser/Admin Endpoints
-**Current:** `is_superuser` field exists on User model but not exposed
+### 7. ~~Superuser/Admin Endpoints~~ ✅ DONE
+**Current:** ~~`is_superuser` field exists on User model but not exposed~~ Now exposed with admin endpoints
 **Benefit:** Admin dashboard capabilities
 **Implementation:**
-- Expose `is_superuser` in `UserRead` schema
-- Add `GET /admin/tenants` to list all tenants
-- Add admin-only dependency decorator
-**Files:** `src/app/schemas/user.py`, `src/app/api/v1/` (new admin router)
+- Exposed `is_superuser` in `UserRead` schema
+- Added `SuperUser` dependency (requires `is_superuser=True`)
+- Added `GET /api/v1/admin/tenants` to list all tenants (superuser only)
+**Files:** `src/app/schemas/user.py`, `src/app/api/dependencies/auth.py`, `src/app/api/v1/admin.py`
 
 ### 8. UUID7 or ULID Instead of uuid4
 **Current:** All models use `uuid4()` for primary keys

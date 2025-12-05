@@ -9,9 +9,11 @@ from src.app.api.dependencies.auth import (
     AdminUser,
     AuthenticatedUser,
     CurrentUser,
+    SuperUser,
     get_authenticated_user,
     get_current_user,
     require_admin_role,
+    require_superuser,
 )
 from src.app.api.dependencies.db import (
     DBSession,
@@ -75,9 +77,11 @@ __all__ = [
     "AdminUser",
     "AuthenticatedUser",
     "CurrentUser",
+    "SuperUser",
     "get_authenticated_user",
     "get_current_user",
     "require_admin_role",
+    "require_superuser",
     # Repositories
     "EmailVerificationRepo",
     "InviteRepo",

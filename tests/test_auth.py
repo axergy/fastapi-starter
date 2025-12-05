@@ -1,6 +1,7 @@
 """Tests for authentication endpoints - Lobby Pattern."""
 
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -13,6 +14,11 @@ class TestRegistration:
 
     async def test_register_creates_user_and_tenant(self, client_no_tenant: AsyncClient) -> None:
         """Test registration creates user and starts tenant provisioning workflow."""
+        # Use unique values per test run to avoid parallel test interference
+        unique_id = uuid4().hex[:8]
+        test_email = f"newuser_{unique_id}@example.com"
+        test_slug = f"new_company_{unique_id}"
+
         with patch("src.app.services.registration_service.get_temporal_client") as mock_get_client:
             # Mock Temporal client
             mock_client = AsyncMock()
@@ -22,53 +28,66 @@ class TestRegistration:
             response = await client_no_tenant.post(
                 "/api/v1/auth/register",
                 json={
-                    "email": "newuser@example.com",
+                    "email": test_email,
                     "password": "correct-horse-battery-staple",
                     "full_name": "New User",
                     "tenant_name": "New Company",
-                    "tenant_slug": "new_company",
+                    "tenant_slug": test_slug,
                 },
             )
 
         assert response.status_code == 202
         data = response.json()
-        assert data["user"]["email"] == "newuser@example.com"
+        assert data["user"]["email"] == test_email
         assert data["user"]["full_name"] == "New User"
-        assert data["tenant_slug"] == "new_company"
+        assert data["tenant_slug"] == test_slug
         assert "workflow_id" in data
 
     async def test_register_duplicate_email_fails(self, client_no_tenant: AsyncClient) -> None:
         """Test registration fails for duplicate email."""
+        # Use unique email/slugs per test run to avoid parallel test interference
+        unique_id = uuid4().hex[:8]
+        test_email = f"duplicate_{unique_id}@example.com"
+        slug_one = f"company_one_{unique_id}"
+        slug_two = f"company_two_{unique_id}"
+
         with patch("src.app.services.registration_service.get_temporal_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.start_workflow.return_value = AsyncMock()
             mock_get_client.return_value = mock_client
 
             # First registration
-            await client_no_tenant.post(
+            first_response = await client_no_tenant.post(
                 "/api/v1/auth/register",
                 json={
-                    "email": "duplicate@example.com",
+                    "email": test_email,
                     "password": "correct-horse-battery-staple",
                     "full_name": "First User",
                     "tenant_name": "Company One",
-                    "tenant_slug": "company_one",
+                    "tenant_slug": slug_one,
                 },
             )
+            assert (
+                first_response.status_code == 202
+            ), f"First registration failed: {first_response.json()}"
 
-            # Second registration with same email
+            # Second registration with same email - must happen immediately
+            # (no other operations in between that could allow cleanup to run)
             response = await client_no_tenant.post(
                 "/api/v1/auth/register",
                 json={
-                    "email": "duplicate@example.com",
+                    "email": test_email,
                     "password": "purple-monkey-dishwasher-99",
                     "full_name": "Second User",
                     "tenant_name": "Company Two",
-                    "tenant_slug": "company_two",
+                    "tenant_slug": slug_two,
                 },
             )
 
-        assert response.status_code == 409
+            # Expect 409 Conflict for duplicate email
+            assert (
+                response.status_code == 409
+            ), f"Expected 409 for duplicate email, got {response.status_code}: {response.json()}"
 
     async def test_register_invalid_slug_format(self, client_no_tenant: AsyncClient) -> None:
         """Test registration fails for invalid tenant slug format."""

@@ -185,73 +185,127 @@ async def client(test_tenant: str) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
+async def test_superuser(engine: AsyncEngine) -> AsyncGenerator[dict, None]:
+    """Create a test superuser (no tenant context needed)."""
+    user_id = uuid4()
+    email = f"superuser_{uuid4().hex[:8]}@example.com"
+    password = "superpassword123"
+    hashed = hash_password(password)
+
+    async with engine.connect() as conn:
+        # Create superuser in public.users (with email_verified=true and is_superuser=true)
+        await conn.execute(
+            text(
+                """
+                INSERT INTO public.users
+                (id, email, hashed_password, full_name, is_active, is_superuser,
+                 email_verified, email_verified_at, created_at, updated_at)
+                VALUES (:id, :email, :hashed_password, :full_name, true, true,
+                 true, now(), now(), now())
+                """
+            ),
+            {
+                "id": user_id,
+                "email": email,
+                "hashed_password": hashed,
+                "full_name": "Super User",
+            },
+        )
+        await conn.commit()
+
+    yield {
+        "id": str(user_id),
+        "email": email,
+        "password": password,
+    }
+
+    # Cleanup
+    async with engine.connect() as conn:
+        await conn.execute(
+            text("DELETE FROM public.users WHERE id = :id"),
+            {"id": user_id},
+        )
+        await conn.commit()
+
+
+@pytest.fixture
+async def test_superuser_with_tenant(
+    engine: AsyncEngine, test_tenant: str
+) -> AsyncGenerator[dict, None]:
+    """Create a test superuser WITH membership in test_tenant."""
+    user_id = uuid4()
+    email = f"superuser_{uuid4().hex[:8]}@example.com"
+    password = "superpassword123"
+    hashed = hash_password(password)
+
+    async with engine.connect() as conn:
+        # Create superuser in public.users
+        await conn.execute(
+            text(
+                """
+                INSERT INTO public.users
+                (id, email, hashed_password, full_name, is_active, is_superuser,
+                 email_verified, email_verified_at, created_at, updated_at)
+                VALUES (:id, :email, :hashed_password, :full_name, true, true,
+                 true, now(), now(), now())
+                """
+            ),
+            {
+                "id": user_id,
+                "email": email,
+                "hashed_password": hashed,
+                "full_name": "Super User",
+            },
+        )
+
+        # Get tenant_id
+        result = await conn.execute(
+            text("SELECT id FROM public.tenants WHERE slug = :slug"),
+            {"slug": test_tenant},
+        )
+        tenant_id = result.scalar_one()
+
+        # Create membership
+        await conn.execute(
+            text(
+                """
+                INSERT INTO public.user_tenant_membership
+                (user_id, tenant_id, role, is_active, created_at)
+                VALUES (:user_id, :tenant_id, 'admin', true, now())
+                """
+            ),
+            {"user_id": user_id, "tenant_id": tenant_id},
+        )
+        await conn.commit()
+
+    yield {
+        "id": str(user_id),
+        "email": email,
+        "password": password,
+        "tenant_slug": test_tenant,
+    }
+
+    # Cleanup - delete membership first, then user
+    async with engine.connect() as conn:
+        await conn.execute(
+            text("DELETE FROM public.user_tenant_membership WHERE user_id = :id"),
+            {"id": user_id},
+        )
+        await conn.execute(
+            text("DELETE FROM public.users WHERE id = :id"),
+            {"id": user_id},
+        )
+        await conn.commit()
+
+
+@pytest.fixture
 async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, None]:
     """Create test client WITHOUT tenant header (for registration).
 
-    Only cleans up data created by registration tests (non-test_ prefixed slugs).
+    IMPORTANT: Does NOT do aggressive cleanup to avoid interfering with parallel tests.
+    Cleanup is scoped to avoid affecting other workers' data.
     """
     await db.dispose_engine()
-
-    # Pre-test cleanup - only clean non-test data (registration creates slugs without test_ prefix)
-    async with engine.connect() as conn:
-        # Delete invites for non-test tenants
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.tenant_invites
-                WHERE tenant_id IN (
-                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
-                )
-                """
-            )
-        )
-        # Delete memberships for non-test tenants
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.user_tenant_membership
-                WHERE tenant_id IN (
-                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
-                )
-                """
-            )
-        )
-        # Delete tokens for non-test tenants
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.refresh_tokens
-                WHERE tenant_id IN (
-                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
-                )
-                """
-            )
-        )
-        # Delete email verification tokens for users not in test tenants
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.email_verification_tokens
-                WHERE user_id NOT IN (
-                    SELECT user_id FROM public.user_tenant_membership
-                )
-                """
-            )
-        )
-        # Delete users not associated with test tenants
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.users
-                WHERE id NOT IN (
-                    SELECT user_id FROM public.user_tenant_membership
-                )
-                """
-            )
-        )
-        # Delete non-test tenants
-        await conn.execute(text("DELETE FROM public.tenants WHERE slug NOT LIKE 'test_%'"))
-        await conn.commit()
 
     app = create_app()
     async with AsyncClient(
@@ -261,58 +315,3 @@ async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, N
         yield client
 
     await db.dispose_engine()
-
-    # Post-test cleanup - same targeted cleanup
-    async with engine.connect() as conn:
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.tenant_invites
-                WHERE tenant_id IN (
-                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
-                )
-                """
-            )
-        )
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.user_tenant_membership
-                WHERE tenant_id IN (
-                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
-                )
-                """
-            )
-        )
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.refresh_tokens
-                WHERE tenant_id IN (
-                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
-                )
-                """
-            )
-        )
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.email_verification_tokens
-                WHERE user_id NOT IN (
-                    SELECT user_id FROM public.user_tenant_membership
-                )
-                """
-            )
-        )
-        await conn.execute(
-            text(
-                """
-                DELETE FROM public.users
-                WHERE id NOT IN (
-                    SELECT user_id FROM public.user_tenant_membership
-                )
-                """
-            )
-        )
-        await conn.execute(text("DELETE FROM public.tenants WHERE slug NOT LIKE 'test_%'"))
-        await conn.commit()
