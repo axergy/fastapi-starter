@@ -6,6 +6,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.app.core.cache import blacklist_token, blacklist_tokens, is_token_blacklisted
+from src.app.core.config import get_settings
 from src.app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -108,7 +110,11 @@ class AuthService:
             raise
 
     async def refresh_access_token(self, refresh_token: str) -> str | None:
-        """Validate refresh token and return new access token."""
+        """Validate refresh token and return new access token.
+
+        Uses Redis blacklist for fast rejection of revoked tokens.
+        Falls back to database check if Redis unavailable.
+        """
         payload = decode_token(refresh_token)
         if payload is None:
             return None
@@ -129,6 +135,13 @@ class AuthService:
             return None
 
         token_hash = sha256(refresh_token.encode()).hexdigest()
+
+        # Fast path: check Redis blacklist first
+        blacklisted = await is_token_blacklisted(token_hash)
+        if blacklisted is True:
+            return None  # Token is definitely revoked
+
+        # If blacklisted is None (Redis unavailable) or False, verify in database
         db_token = await self.token_repo.get_valid_by_hash_and_tenant(token_hash, self.tenant_id)
 
         if db_token is None:
@@ -141,7 +154,11 @@ class AuthService:
         return create_access_token(user_id, self.tenant_id)
 
     async def revoke_refresh_token(self, refresh_token: str) -> bool:
-        """Revoke a refresh token. Returns True if successful."""
+        """Revoke a refresh token. Returns True if successful.
+
+        Adds token to Redis blacklist for fast rejection and updates
+        database as source of truth.
+        """
         try:
             token_hash = sha256(refresh_token.encode()).hexdigest()
             db_token = await self.token_repo.get_by_hash(token_hash)
@@ -153,6 +170,12 @@ class AuthService:
             if not hmac.compare_digest(token_hash, db_token.token_hash):
                 return False
 
+            # Add to Redis blacklist (if available) for fast rejection
+            settings = get_settings()
+            ttl = settings.refresh_token_expire_days * 86400  # days to seconds
+            await blacklist_token(token_hash, ttl)
+
+            # Always update database (source of truth)
             db_token.revoked = True
             await self.session.commit()
             return True
@@ -168,9 +191,22 @@ class AuthService:
         - Account compromise (force re-authentication)
         - User deactivation
 
+        Adds all tokens to Redis blacklist for fast rejection and updates
+        database as source of truth.
+
         Returns the number of tokens revoked.
         """
         try:
+            # Get token hashes before revoking (for Redis blacklist)
+            token_hashes = await self.token_repo.get_active_hashes_for_user(user_id, self.tenant_id)
+
+            # Bulk blacklist in Redis (if available)
+            if token_hashes:
+                settings = get_settings()
+                ttl = settings.refresh_token_expire_days * 86400  # days to seconds
+                await blacklist_tokens(token_hashes, ttl)
+
+            # Always update database (source of truth)
             count = await self.token_repo.revoke_all_for_user(user_id, self.tenant_id)
             await self.session.commit()
             return count

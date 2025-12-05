@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # Invites
     invite_expire_days: int = 7
 
+    # Redis (optional - app works without it)
+    redis_url: str | None = None  # e.g., "redis://localhost:6379/0"
+    redis_pool_size: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:

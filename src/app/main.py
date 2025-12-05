@@ -19,6 +19,7 @@ from src.app.core.config import get_settings
 from src.app.core.db import dispose_engine, get_public_session
 from src.app.core.logging import get_logger, setup_logging
 from src.app.core.rate_limit import limiter
+from src.app.core.redis import close_redis, get_redis
 from src.app.core.security import SecurityHeadersMiddleware
 from src.app.temporal.client import close_temporal_client, get_temporal_client
 
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await asyncio.sleep(grace_period)
 
     logger.info("Closing connections...")
+    await close_redis()
     await close_temporal_client()
     await dispose_engine()
     logger.info("Shutdown complete")
@@ -116,6 +118,7 @@ def create_app() -> FastAPI:
             "status": "healthy",
             "database": "unknown",
             "temporal": "unknown",
+            "redis": "not_configured",
         }
 
         # Check database
@@ -136,6 +139,20 @@ def create_app() -> FastAPI:
             # Temporal being down is "degraded", not fully unhealthy
             if health_status["status"] == "healthy":
                 health_status["status"] = "degraded"
+
+        # Check Redis (optional - don't fail if unavailable)
+        redis = await get_redis()
+        if redis:
+            try:
+                result = redis.ping()
+                if hasattr(result, "__await__"):
+                    await result
+                health_status["redis"] = "healthy"
+            except Exception as e:
+                health_status["redis"] = f"unhealthy: {str(e)}"
+                # Redis being down is "degraded", not fully unhealthy
+                if health_status["status"] == "healthy":
+                    health_status["status"] = "degraded"
 
         status_code = 200 if health_status["status"] == "healthy" else 503
         return JSONResponse(content=health_status, status_code=status_code)

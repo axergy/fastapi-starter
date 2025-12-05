@@ -131,15 +131,15 @@ Validated code review findings for the FastAPI SaaS Starter project.
 - Added `soft_delete_tenant` activity for tenant record cleanup
 **Files:** `src/app/temporal/activities.py`, `src/app/temporal/worker.py`
 
-### 15. Add Redis for Distributed State
-**Current:** Rate limiting uses in-memory storage (per-process)
-**Issues:**
-- Rate limits don't work across multiple app instances
-- Token revocation requires DB query on every request
-- No request-level caching
+### 15. ~~Add Redis for Distributed State~~ ✅ DONE
+**Current:** ~~Rate limiting uses in-memory storage (per-process)~~ Now uses Redis with graceful fallback
+**Benefit:** Distributed rate limiting + fast token revocation checks
 **Implementation:**
-- Add `redis` or `aioredis` dependency
-- Configure slowapi with Redis backend
-- Cache token revocation status
-- Cache frequently accessed tenant data
-**Files:** `pyproject.toml`, `src/app/core/rate_limit.py`, `src/app/core/config.py`
+- Added `redis[hiredis]>=5.0.0` dependency with async support
+- Redis client with connection pooling and graceful fallback (`redis.py`)
+- Distributed rate limiting via slowapi with `async+redis://` storage URI
+- Token blacklist service for fast revocation checks (`cache.py`)
+- Three-valued blacklist check: `True` (revoked), `False` (not revoked), `None` (Redis unavailable → check DB)
+- Health check includes Redis status (`healthy`, `unhealthy`, `not_configured`)
+- App works without Redis (graceful degradation to in-memory rate limiting + DB-only token checks)
+**Files:** `pyproject.toml`, `src/app/core/redis.py`, `src/app/core/cache.py`, `src/app/core/rate_limit.py`, `src/app/core/config.py`, `src/app/services/auth_service.py`, `src/app/main.py`, `docker-compose.yml`

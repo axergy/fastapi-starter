@@ -46,6 +46,21 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
         )
         return result.scalar_one_or_none()
 
+    async def get_active_hashes_for_user(self, user_id: UUID, tenant_id: UUID) -> list[str]:
+        """Get token hashes for all active tokens of a user in a tenant.
+
+        Used for bulk blacklisting in Redis cache.
+        """
+        result = await self.session.execute(
+            select(RefreshToken.token_hash).where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.tenant_id == tenant_id,
+                RefreshToken.revoked == False,  # noqa: E712
+                RefreshToken.expires_at > utc_now(),
+            )
+        )
+        return list(result.scalars().all())
+
     async def revoke_all_for_user(self, user_id: UUID, tenant_id: UUID) -> int:
         """Revoke all active refresh tokens for a user in a tenant.
 
