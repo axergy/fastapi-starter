@@ -47,3 +47,18 @@ class TenantRepository(BaseRepository[Tenant]):
         )
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+    async def list_for_deletion(self, status_filter: str | None = None) -> list[Tenant]:
+        """List tenants eligible for deletion (not already soft-deleted).
+
+        Args:
+            status_filter: Optional status to filter by (e.g., 'failed')
+
+        Returns:
+            List of tenants that can be deleted
+        """
+        query = select(Tenant).where(Tenant.deleted_at.is_(None))  # type: ignore[union-attr]
+        if status_filter:
+            query = query.where(Tenant.status == status_filter)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())

@@ -21,6 +21,7 @@ class Tenant(SQLModel, table=True):
     status: str = Field(default=TenantStatus.PROVISIONING.value)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utc_now)
+    deleted_at: datetime | None = Field(default=None)
 
     @property
     def schema_name(self) -> str:
@@ -30,3 +31,8 @@ class Tenant(SQLModel, table=True):
     def status_enum(self) -> TenantStatus:
         """Get status as TenantStatus enum."""
         return TenantStatus(self.status)
+
+    @property
+    def is_deleted(self) -> bool:
+        """Check if tenant is soft-deleted."""
+        return self.deleted_at is not None

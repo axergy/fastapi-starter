@@ -99,26 +99,34 @@ Validated code review findings for the FastAPI SaaS Starter project.
 - Added `AuthService.revoke_all_tokens_for_user(user_id)` - tenant-scoped service method
 **Files:** `src/app/repositories/public/token.py`, `src/app/services/auth_service.py`
 
-### 12. Soft-Delete + Cleanup for Failed Tenants
-**Current:** Failed tenants remain in DB with `status=failed`, schemas may be orphaned
-**Benefit:** Clean state, ability to retry or cleanup resources
+### 12. ~~Soft-Delete + Cleanup for Failed Tenants~~ ✅ DONE
+**Current:** ~~Failed tenants remain in DB with `status=failed`, schemas may be orphaned~~ Now supports tenant deletion
+**Benefit:** Clean state, ability to cleanup resources
 **Implementation:**
-- Add `deleted_at` timestamp field
-- Add cleanup workflow for failed provisioning
-- Add scheduled job to clean orphaned schemas
-**Files:** `src/app/models/public.py`, `src/app/temporal/workflows.py`
+- Added `deleted_at` timestamp field to Tenant model
+- Added `TenantDeletionWorkflow` (drops schema + soft-deletes record)
+- Added `DELETE /admin/tenants/{id}` and `DELETE /admin/tenants?status=failed` endpoints
+- Added `AdminService` with delete_tenant, bulk_delete_tenants methods
+**Files:** `src/app/models/public/tenant.py`, `src/app/temporal/workflows.py`, `src/app/services/admin_service.py`, `src/app/api/v1/admin.py`
 
-### 13. Compensation Logic in Workflows
-**Current:** On failure, only marks tenant as "failed" - no undo
+### 13. ~~Compensation Logic in Workflows~~ ✅ DONE
+**Current:** ~~On failure, only marks tenant as "failed" - no undo~~ Now cleans up on failure
 **Benefit:** Clean rollback of partial resources (Saga pattern)
-**Implementation:** Add compensating activities that undo each step on failure
-**File:** `src/app/temporal/workflows.py:165-177`
+**Implementation:**
+- Track completed steps in workflow-local state
+- On failure, run compensations in reverse order
+- If migrations completed, drop_tenant_schema is called before marking failed
+**File:** `src/app/temporal/workflows.py` (TenantProvisioningWorkflow._run_compensations)
 
-### 14. Add drop_tenant_schema Activity
-**Current:** No programmatic way to drop tenant schemas
+### 14. ~~Add drop_tenant_schema Activity~~ ✅ DONE
+**Current:** ~~No programmatic way to drop tenant schemas~~ Now supports schema deletion
 **Benefit:** Enable cleanup workflows, tenant deletion
-**Implementation:** Add `drop_tenant_schema` activity with idempotency
-**File:** `src/app/temporal/activities.py`
+**Implementation:**
+- Added `drop_tenant_schema` activity with idempotency (IF EXISTS)
+- Validates schema name with `validate_schema_name()` before SQL
+- Uses `quote_ident()` for safe identifier quoting
+- Added `soft_delete_tenant` activity for tenant record cleanup
+**Files:** `src/app/temporal/activities.py`, `src/app/temporal/worker.py`
 
 ### 15. Add Redis for Distributed State
 **Current:** Rate limiting uses in-memory storage (per-process)

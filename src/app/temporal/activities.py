@@ -11,7 +11,7 @@ import asyncio
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -19,6 +19,7 @@ from temporalio import activity
 
 from src.app.core.config import get_settings
 from src.app.core.db import run_migrations_sync
+from src.app.core.security import validate_schema_name
 from src.app.models.base import utc_now
 from src.app.models.public import MembershipRole, Tenant, TenantStatus, UserTenantMembership
 
@@ -276,4 +277,130 @@ async def create_admin_membership(input: CreateMembershipInput) -> bool:
         _sync_create_membership, input.user_id, input.tenant_id, input.role
     )
     activity.logger.info(f"Membership created: {result}")
+    return result
+
+
+# --- Schema Management Activities ---
+
+
+@dataclass
+class DropSchemaInput:
+    schema_name: str
+
+
+@dataclass
+class DropSchemaOutput:
+    success: bool
+    schema_existed: bool
+
+
+def _sync_drop_tenant_schema(schema_name: str) -> DropSchemaOutput:
+    """Synchronous schema drop logic with validation."""
+    # Validate schema name BEFORE any SQL execution
+    validate_schema_name(schema_name)
+
+    engine = get_sync_engine()
+    with Session(engine) as session:
+        conn = session.connection()
+
+        # Use quote_ident for safe identifier quoting
+        quoted_schema = conn.execute(
+            text("SELECT quote_ident(:schema)"), {"schema": schema_name}
+        ).scalar()
+
+        # Check if schema exists first
+        schema_exists = conn.execute(
+            text(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM information_schema.schemata
+                    WHERE schema_name = :schema
+                )
+                """
+            ),
+            {"schema": schema_name},
+        ).scalar()
+
+        if schema_exists:
+            # CASCADE drops all contained objects
+            conn.execute(text(f"DROP SCHEMA IF EXISTS {quoted_schema} CASCADE"))
+            session.commit()
+
+        return DropSchemaOutput(success=True, schema_existed=bool(schema_exists))
+
+
+@activity.defn
+async def drop_tenant_schema(input: DropSchemaInput) -> DropSchemaOutput:
+    """
+    Drop a tenant schema from the database.
+
+    Idempotent: Safe to call multiple times - uses IF EXISTS.
+    Security: Validates schema name before execution.
+
+    Args:
+        input: DropSchemaInput with schema_name
+
+    Returns:
+        DropSchemaOutput indicating success and whether schema existed
+    """
+    activity.logger.info(f"Dropping schema: {input.schema_name}")
+    result = await asyncio.to_thread(_sync_drop_tenant_schema, input.schema_name)
+
+    if result.schema_existed:
+        activity.logger.info(f"Schema {input.schema_name} dropped successfully")
+    else:
+        activity.logger.info(f"Schema {input.schema_name} did not exist (already clean)")
+
+    return result
+
+
+# --- Tenant Lifecycle Activities ---
+
+
+@dataclass
+class SoftDeleteTenantInput:
+    tenant_id: str
+
+
+def _sync_soft_delete_tenant(tenant_id: str) -> bool:
+    """Synchronous soft-delete logic."""
+    engine = get_sync_engine()
+    with Session(engine) as session:
+        tenant_uuid = UUID(tenant_id)
+        stmt = select(Tenant).where(Tenant.id == tenant_uuid)
+        tenant = session.scalars(stmt).first()
+
+        if not tenant:
+            return False
+
+        if tenant.deleted_at is not None:
+            return True  # Already deleted (idempotent)
+
+        tenant.deleted_at = utc_now()
+        tenant.is_active = False
+        session.commit()
+        return True
+
+
+@activity.defn
+async def soft_delete_tenant(input: SoftDeleteTenantInput) -> bool:
+    """
+    Soft-delete a tenant by setting deleted_at timestamp.
+
+    Idempotent: Safe to retry - skips if already deleted.
+
+    Args:
+        input: SoftDeleteTenantInput with tenant_id
+
+    Returns:
+        True if tenant was deleted (or already was), False if tenant not found
+    """
+    activity.logger.info(f"Soft-deleting tenant: {input.tenant_id}")
+    result = await asyncio.to_thread(_sync_soft_delete_tenant, input.tenant_id)
+
+    if result:
+        activity.logger.info(f"Tenant {input.tenant_id} soft-deleted")
+    else:
+        activity.logger.warning(f"Tenant {input.tenant_id} not found")
+
     return result

@@ -15,6 +15,7 @@ from src.app.api.dependencies.repositories import (
     WorkflowExecRepo,
 )
 from src.app.api.dependencies.tenant import ValidatedTenant
+from src.app.services.admin_service import AdminService
 from src.app.services.auth_service import AuthService
 from src.app.services.email_verification_service import EmailVerificationService
 from src.app.services.invite_service import InviteService
@@ -98,6 +99,14 @@ def get_invite_service_public(
     return InviteService(invite_repo, user_repo, membership_repo, tenant_repo, session, None)
 
 
+def get_admin_service(
+    tenant_repo: TenantRepo,
+    session: DBSession,
+) -> AdminService:
+    """Get admin service (no tenant context required)."""
+    return AdminService(tenant_repo, session)
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 TenantServiceDep = Annotated[TenantService, Depends(get_tenant_service)]
@@ -107,3 +116,4 @@ EmailVerificationServiceDep = Annotated[
 ]
 InviteServiceDep = Annotated[InviteService, Depends(get_invite_service)]
 InviteServicePublicDep = Annotated[InviteService, Depends(get_invite_service_public)]
+AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]

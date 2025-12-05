@@ -15,11 +15,18 @@ from src.app.temporal.activities import (
     create_admin_membership,
     create_stripe_customer,
     dispose_sync_engine,
+    drop_tenant_schema,
+    get_tenant_info,
     run_tenant_migrations,
     send_welcome_email,
+    soft_delete_tenant,
     update_tenant_status,
 )
-from src.app.temporal.workflows import TenantProvisioningWorkflow, UserOnboardingWorkflow
+from src.app.temporal.workflows import (
+    TenantDeletionWorkflow,
+    TenantProvisioningWorkflow,
+    UserOnboardingWorkflow,
+)
 
 logger = get_logger(__name__)
 
@@ -33,12 +40,19 @@ async def main() -> None:
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[UserOnboardingWorkflow, TenantProvisioningWorkflow],
+        workflows=[
+            UserOnboardingWorkflow,
+            TenantProvisioningWorkflow,
+            TenantDeletionWorkflow,
+        ],
         activities=[
             create_admin_membership,
             create_stripe_customer,
-            send_welcome_email,
+            drop_tenant_schema,
+            get_tenant_info,
             run_tenant_migrations,
+            send_welcome_email,
+            soft_delete_tenant,
             update_tenant_status,
         ],
     )

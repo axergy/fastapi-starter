@@ -41,6 +41,7 @@ from src.app.api.dependencies.repositories import (
 
 # Services
 from src.app.api.dependencies.services import (
+    AdminServiceDep,
     AuthServiceDep,
     EmailVerificationServiceDep,
     InviteServiceDep,
@@ -48,6 +49,7 @@ from src.app.api.dependencies.services import (
     RegistrationServiceDep,
     TenantServiceDep,
     UserServiceDep,
+    get_admin_service,
     get_auth_service,
     get_email_verification_service,
     get_invite_service,
@@ -98,6 +100,7 @@ __all__ = [
     "get_user_repository",
     "get_workflow_execution_repository",
     # Services
+    "AdminServiceDep",
     "AuthServiceDep",
     "EmailVerificationServiceDep",
     "InviteServiceDep",
@@ -105,6 +108,7 @@ __all__ = [
     "RegistrationServiceDep",
     "TenantServiceDep",
     "UserServiceDep",
+    "get_admin_service",
     "get_auth_service",
     "get_email_verification_service",
     "get_invite_service",
