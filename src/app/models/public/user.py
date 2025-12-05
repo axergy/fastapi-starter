@@ -1,7 +1,7 @@
 """User models - centralized in public schema (Lobby Pattern)."""
 
 from datetime import datetime
-from uuid import UUID, uuid4
+from uuid import UUID, uuid7
 
 from sqlmodel import Field, SQLModel
 
@@ -15,7 +15,7 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
     __table_args__ = {"schema": "public"}
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
     email: str = Field(max_length=255, unique=True, index=True)
     hashed_password: str = Field(max_length=255)
     full_name: str = Field(max_length=100)

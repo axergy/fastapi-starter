@@ -2,7 +2,7 @@
 name = "fastapi-saas-starter"
 version = "0.1.0"
 description = "Multi-tenant FastAPI SaaS starter with Temporal workflows"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi[standard]>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -46,7 +46,7 @@ packages = ["src/app"]
 # --- Ruff Configuration ---
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"  # py314 not yet supported by ruff
 
 [tool.ruff.lint]
 # Enable specific rules:
@@ -71,7 +71,7 @@ testpaths = ["tests"]
 
 # --- MyPy Configuration ---
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 warn_unused_ignores = false
 plugins = [

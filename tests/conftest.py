@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
-from uuid import uuid4
+from uuid import uuid7
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -19,7 +19,7 @@ from src.app.main import create_app
 
 
 @pytest.fixture(scope="function")
-async def engine() -> AsyncGenerator[AsyncEngine, None]:
+async def engine() -> AsyncGenerator[AsyncEngine]:
     """Create test database engine and ensure public schema migrations are applied."""
     await db.dispose_engine()
 
@@ -36,14 +36,15 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
 
 
 @pytest.fixture
-async def test_tenant(engine: AsyncEngine) -> AsyncGenerator[str, None]:
+async def test_tenant(engine: AsyncEngine) -> AsyncGenerator[str]:
     """Create isolated tenant for each test (Lobby Pattern).
 
     Creates:
     1. Tenant record in public.tenants (status=ready)
     2. Empty tenant schema (via migrations)
     """
-    tenant_slug = f"test_{uuid4().hex[:8]}"
+    # Use last 8 chars of UUID7 (random part) to ensure uniqueness in parallel tests
+    tenant_slug = f"test_{uuid7().hex[-8:]}"
     schema_name = f"tenant_{tenant_slug}"
 
     # Create tenant record in public schema
@@ -105,10 +106,10 @@ async def test_tenant(engine: AsyncEngine) -> AsyncGenerator[str, None]:
 
 
 @pytest.fixture
-async def test_user(engine: AsyncEngine, test_tenant: str) -> AsyncGenerator[dict, None]:
+async def test_user(engine: AsyncEngine, test_tenant: str) -> AsyncGenerator[dict]:
     """Create a test user with membership in test_tenant."""
-    user_id = uuid4()
-    email = f"testuser_{uuid4().hex[:8]}@example.com"
+    user_id = uuid7()
+    email = f"testuser_{uuid7().hex[-8:]}@example.com"
     password = "testpassword123"
     hashed = hash_password(password)
 
@@ -169,7 +170,7 @@ async def test_user(engine: AsyncEngine, test_tenant: str) -> AsyncGenerator[dic
 
 
 @pytest.fixture
-async def client(test_tenant: str) -> AsyncGenerator[AsyncClient, None]:
+async def client(test_tenant: str) -> AsyncGenerator[AsyncClient]:
     """Create test client with tenant header."""
     await db.dispose_engine()
 
@@ -185,10 +186,10 @@ async def client(test_tenant: str) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
-async def test_superuser(engine: AsyncEngine) -> AsyncGenerator[dict, None]:
+async def test_superuser(engine: AsyncEngine) -> AsyncGenerator[dict]:
     """Create a test superuser (no tenant context needed)."""
-    user_id = uuid4()
-    email = f"superuser_{uuid4().hex[:8]}@example.com"
+    user_id = uuid7()
+    email = f"superuser_{uuid7().hex[-8:]}@example.com"
     password = "superpassword123"
     hashed = hash_password(password)
 
@@ -229,12 +230,10 @@ async def test_superuser(engine: AsyncEngine) -> AsyncGenerator[dict, None]:
 
 
 @pytest.fixture
-async def test_superuser_with_tenant(
-    engine: AsyncEngine, test_tenant: str
-) -> AsyncGenerator[dict, None]:
+async def test_superuser_with_tenant(engine: AsyncEngine, test_tenant: str) -> AsyncGenerator[dict]:
     """Create a test superuser WITH membership in test_tenant."""
-    user_id = uuid4()
-    email = f"superuser_{uuid4().hex[:8]}@example.com"
+    user_id = uuid7()
+    email = f"superuser_{uuid7().hex[-8:]}@example.com"
     password = "superpassword123"
     hashed = hash_password(password)
 
@@ -299,7 +298,7 @@ async def test_superuser_with_tenant(
 
 
 @pytest.fixture
-async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, None]:
+async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient]:
     """Create test client WITHOUT tenant header (for registration).
 
     IMPORTANT: Does NOT do aggressive cleanup to avoid interfering with parallel tests.

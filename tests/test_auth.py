@@ -1,7 +1,7 @@
 """Tests for authentication endpoints - Lobby Pattern."""
 
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import uuid7
 
 import pytest
 from httpx import AsyncClient
@@ -15,7 +15,7 @@ class TestRegistration:
     async def test_register_creates_user_and_tenant(self, client_no_tenant: AsyncClient) -> None:
         """Test registration creates user and starts tenant provisioning workflow."""
         # Use unique values per test run to avoid parallel test interference
-        unique_id = uuid4().hex[:8]
+        unique_id = uuid7().hex[-8:]
         test_email = f"newuser_{unique_id}@example.com"
         test_slug = f"new_company_{unique_id}"
 
@@ -46,7 +46,7 @@ class TestRegistration:
     async def test_register_duplicate_email_fails(self, client_no_tenant: AsyncClient) -> None:
         """Test registration fails for duplicate email."""
         # Use unique email/slugs per test run to avoid parallel test interference
-        unique_id = uuid4().hex[:8]
+        unique_id = uuid7().hex[-8:]
         test_email = f"duplicate_{unique_id}@example.com"
         slug_one = f"company_one_{unique_id}"
         slug_two = f"company_two_{unique_id}"

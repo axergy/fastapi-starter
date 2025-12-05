@@ -65,11 +65,12 @@ Validated code review findings for the FastAPI SaaS Starter project.
 - Added `GET /api/v1/admin/tenants` to list all tenants (superuser only)
 **Files:** `src/app/schemas/user.py`, `src/app/api/dependencies/auth.py`, `src/app/api/v1/admin.py`
 
-### 8. UUID7 or ULID Instead of uuid4
-**Current:** All models use `uuid4()` for primary keys
+### 8. ~~UUID7 or ULID Instead of uuid4~~ ✅ DONE
+**Risk:** Low
+**Current:** ~~All models use `uuid4()` for primary keys~~ Now uses `uuid7()` from stdlib
 **Benefit:** Better database index performance (time-ordered, reduces fragmentation)
-**Implementation:** Replace `uuid4` with `uuid7` (Python 3.12+) or `ulid` package
-**Files:** `src/app/models/public.py`, `src/app/models/tenant.py`
+**Implementation:** Upgraded to Python 3.14.1, replaced `uuid4` with `uuid7` from stdlib
+**Files:** `src/app/models/public/*.py`, `pyproject.toml`
 
 ### 9. OpenAPI Tags and Response Examples
 **Current:** Minimal API documentation

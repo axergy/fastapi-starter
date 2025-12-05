@@ -1,7 +1,7 @@
 """Tenant model - registry in public schema."""
 
 from datetime import datetime
-from uuid import UUID, uuid4
+from uuid import UUID, uuid7
 
 from sqlmodel import Field, SQLModel
 
@@ -15,7 +15,7 @@ class Tenant(SQLModel, table=True):
     __tablename__ = "tenants"
     __table_args__ = {"schema": "public"}
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
     name: str = Field(max_length=100, index=True)
     slug: str = Field(max_length=50, unique=True, index=True)
     status: str = Field(default=TenantStatus.PROVISIONING.value)

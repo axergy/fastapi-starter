@@ -1,7 +1,7 @@
 """Authentication-related models - tokens and invites."""
 
 from datetime import datetime
-from uuid import UUID, uuid4
+from uuid import UUID, uuid7
 
 from sqlmodel import Field, SQLModel
 
@@ -15,7 +15,7 @@ class RefreshToken(SQLModel, table=True):
     __tablename__ = "refresh_tokens"
     __table_args__ = {"schema": "public"}
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
     user_id: UUID = Field(foreign_key="public.users.id", index=True)
     tenant_id: UUID = Field(foreign_key="public.tenants.id", index=True)
     token_hash: str = Field(max_length=255, unique=True, index=True)
@@ -30,7 +30,7 @@ class EmailVerificationToken(SQLModel, table=True):
     __tablename__ = "email_verification_tokens"
     __table_args__ = {"schema": "public"}
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
     user_id: UUID = Field(foreign_key="public.users.id", index=True)
     token_hash: str = Field(max_length=255, unique=True, index=True)
     expires_at: datetime
@@ -45,7 +45,7 @@ class TenantInvite(SQLModel, table=True):
     __tablename__ = "tenant_invites"
     __table_args__ = {"schema": "public"}
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    id: UUID = Field(default_factory=uuid7, primary_key=True)
     tenant_id: UUID = Field(foreign_key="public.tenants.id", index=True)
     email: str = Field(max_length=255, index=True)
     token_hash: str = Field(max_length=255, unique=True, index=True)
