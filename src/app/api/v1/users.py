@@ -14,13 +14,60 @@ from src.app.schemas.user import UserRead, UserUpdate
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/me", response_model=UserRead)
+@router.get(
+    "/me",
+    response_model=UserRead,
+    responses={
+        200: {
+            "description": "Current user profile",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "email": "user@example.com",
+                        "full_name": "John Doe",
+                        "is_active": True,
+                        "is_superuser": False,
+                        "email_verified": True,
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                    }
+                }
+            },
+        },
+        401: {"description": "Not authenticated"},
+    },
+)
 async def get_current_user(current_user: CurrentUser) -> UserRead:
     """Get current authenticated user."""
     return UserRead.model_validate(current_user)
 
 
-@router.patch("/me", response_model=UserRead)
+@router.patch(
+    "/me",
+    response_model=UserRead,
+    responses={
+        200: {
+            "description": "User profile updated",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "email": "user@example.com",
+                        "full_name": "Jane Doe",
+                        "is_active": True,
+                        "is_superuser": False,
+                        "email_verified": True,
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-20T14:45:00Z",
+                    }
+                }
+            },
+        },
+        401: {"description": "Not authenticated"},
+        422: {"description": "Validation error"},
+    },
+)
 async def update_current_user(
     data: UserUpdate,
     current_user: CurrentUser,

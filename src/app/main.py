@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan - startup and shutdown."""
     settings = get_settings()
     setup_logging(settings.debug)
@@ -47,11 +47,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Shutdown complete")
 
 
+OPENAPI_TAGS = [
+    {"name": "auth", "description": "Authentication and token management"},
+    {"name": "users", "description": "User profile operations"},
+    {"name": "tenants", "description": "Tenant management and provisioning"},
+    {"name": "invites", "description": "Tenant invitation management"},
+    {"name": "admin", "description": "Superuser administration endpoints"},
+]
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
         title=settings.app_name,
+        description="Multi-tenant SaaS API with Temporal workflows",
+        version="0.1.0",
+        openapi_tags=OPENAPI_TAGS,
         lifespan=lifespan,
     )
 

@@ -38,6 +38,25 @@ router = APIRouter(prefix="/invites", tags=["invites"])
     status_code=status.HTTP_201_CREATED,
     summary="Create invite",
     description="Create and send an invite to join the tenant. Admin role required.",
+    responses={
+        201: {
+            "description": "Invite created and sent",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "email": "newuser@example.com",
+                        "role": "member",
+                        "expires_at": "2024-01-22T10:30:00Z",
+                        "message": "Invite sent successfully",
+                    }
+                }
+            },
+        },
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized (admin role required)"},
+        409: {"description": "User already member or invite already pending"},
+    },
 )
 async def create_invite(
     request: InviteCreateRequest,
@@ -69,6 +88,38 @@ async def create_invite(
     response_model=InviteListResponse,
     summary="List pending invites",
     description="List all pending invites for the tenant. Admin role required.",
+    responses={
+        200: {
+            "description": "List of pending invites",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "invites": [
+                            {
+                                "id": "550e8400-e29b-41d4-a716-446655440000",
+                                "email": "user1@example.com",
+                                "role": "member",
+                                "status": "pending",
+                                "expires_at": "2024-01-22T10:30:00Z",
+                                "created_at": "2024-01-15T10:30:00Z",
+                            },
+                            {
+                                "id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
+                                "email": "user2@example.com",
+                                "role": "admin",
+                                "status": "pending",
+                                "expires_at": "2024-01-23T14:45:00Z",
+                                "created_at": "2024-01-16T14:45:00Z",
+                            },
+                        ],
+                        "total": 2,
+                    }
+                }
+            },
+        },
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized (admin role required)"},
+    },
 )
 async def list_invites(
     admin_user: AdminUser,
@@ -89,6 +140,26 @@ async def list_invites(
     response_model=InviteRead,
     summary="Get invite by ID",
     description="Get details of a specific invite. Admin role required.",
+    responses={
+        200: {
+            "description": "Invite details",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "email": "newuser@example.com",
+                        "role": "member",
+                        "status": "pending",
+                        "expires_at": "2024-01-22T10:30:00Z",
+                        "created_at": "2024-01-15T10:30:00Z",
+                    }
+                }
+            },
+        },
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized (admin role required)"},
+        404: {"description": "Invite not found"},
+    },
 )
 async def get_invite(
     invite_id: UUID,
@@ -110,6 +181,17 @@ async def get_invite(
     response_model=InviteCancelResponse,
     summary="Cancel invite",
     description="Cancel a pending invite. Admin role required.",
+    responses={
+        200: {
+            "description": "Invite cancelled",
+            "content": {
+                "application/json": {"example": {"message": "Invite cancelled successfully"}}
+            },
+        },
+        400: {"description": "Invite already accepted or cancelled"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized (admin role required)"},
+    },
 )
 async def cancel_invite(
     invite_id: UUID,
@@ -132,6 +214,25 @@ async def cancel_invite(
     response_model=InviteCreateResponse,
     summary="Resend invite",
     description="Resend an invite (generates new token, invalidates old). Admin role required.",
+    responses={
+        200: {
+            "description": "Invite resent with new token",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "email": "newuser@example.com",
+                        "role": "member",
+                        "expires_at": "2024-01-29T10:30:00Z",
+                        "message": "Invite resent successfully",
+                    }
+                }
+            },
+        },
+        400: {"description": "Invite already accepted or cancelled"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized (admin role required)"},
+    },
 )
 async def resend_invite(
     invite_id: UUID,
@@ -168,6 +269,23 @@ async def resend_invite(
     response_model=InviteInfoResponse,
     summary="Get invite info by token",
     description="Get public information about an invite for display on accept page.",
+    responses={
+        200: {
+            "description": "Invite information for accept page",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "tenant_name": "Acme Corporation",
+                        "email": "newuser@example.com",
+                        "role": "member",
+                        "expires_at": "2024-01-22T10:30:00Z",
+                        "invited_by_name": "John Doe",
+                    }
+                }
+            },
+        },
+        404: {"description": "Invalid or expired invite"},
+    },
 )
 async def get_invite_info(
     token: str,
@@ -197,6 +315,38 @@ class AcceptInviteRequestBody(BaseModel):
         "Accept an invite. For existing users, include Authorization header. "
         "For new users, include email, password, and full_name in body."
     ),
+    responses={
+        200: {
+            "description": "Invite accepted successfully",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "existing_user": {
+                            "summary": "Existing user joined tenant",
+                            "value": {
+                                "message": "Successfully joined tenant",
+                                "tenant_slug": "acme-corp",
+                                "user_id": "550e8400-e29b-41d4-a716-446655440000",
+                                "is_new_user": False,
+                            },
+                        },
+                        "new_user": {
+                            "summary": "New user registered and joined",
+                            "value": {
+                                "message": "Account created and joined tenant successfully",
+                                "tenant_slug": "acme-corp",
+                                "user_id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
+                                "is_new_user": True,
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        400: {"description": "Invalid request or invite already accepted"},
+        401: {"description": "Invalid or expired auth token (for existing users)"},
+        404: {"description": "Invalid or expired invite"},
+    },
 )
 async def accept_invite(
     token: str,
