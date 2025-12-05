@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "FastAPI SaaS Starter"
+    app_env: str = "development"  # development, testing, production
     debug: bool = False
 
     # Database
@@ -71,6 +72,10 @@ class Settings(BaseSettings):
     # Redis (optional - app works without it)
     redis_url: str | None = None  # e.g., "redis://localhost:6379/0"
     redis_pool_size: int = 10
+
+    # Rate Limiting (global middleware - DoS protection)
+    global_rate_limit_per_second: int = 10  # Max requests/second per IP
+    global_rate_limit_burst: int = 20  # Token bucket burst capacity
 
 
 @lru_cache

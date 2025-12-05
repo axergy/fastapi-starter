@@ -57,7 +57,7 @@ async def get_redis() -> Redis | None:
         logger.warning(f"Redis connection failed: {e}. Falling back to non-Redis mode.")
         # Clean up partial initialization
         if _redis:
-            await _redis.close()
+            await _redis.aclose()
             _redis = None
         if _pool:
             await _pool.disconnect()
@@ -73,7 +73,7 @@ async def close_redis() -> None:
     global _pool, _redis, _connection_attempted
 
     if _redis:
-        await _redis.close()
+        await _redis.aclose()
         logger.info("Redis connection closed")
     if _pool:
         await _pool.disconnect()

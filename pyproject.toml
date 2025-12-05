@@ -24,6 +24,7 @@ dependencies = [
     "prometheus-fastapi-instrumentator>=7.0.0",
     "structlog>=24.0.0",
     "resend>=2.0.0",
+    "coredis>=5.3.0",
 ]
 
 [project.optional-dependencies]

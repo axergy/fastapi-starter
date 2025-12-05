@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from sqlalchemy.pool import NullPool
 
 from src.app.core import db
+from src.app.core import redis as redis_core
 from src.app.core.config import get_settings
 from src.app.core.db import run_migrations_sync
 from src.app.main import create_app
@@ -30,6 +31,22 @@ from tests.utils.cleanup import (
     cleanup_user_cascade,
     drop_tenant_schema,
 )
+
+
+@pytest.fixture(autouse=True)
+async def _reset_redis_between_tests() -> AsyncGenerator[None]:
+    """Reset Redis state between tests to prevent event loop issues.
+
+    Redis clients hold references to their event loop. When pytest creates
+    a new event loop for each test, stale Redis clients cause
+    'Event loop is closed' errors. This fixture ensures Redis is properly
+    closed after each test.
+    """
+    # Reset before test
+    redis_core.reset_redis_state()
+    yield
+    # Close and reset after test
+    await redis_core.close_redis()
 
 
 @pytest.fixture(scope="function")

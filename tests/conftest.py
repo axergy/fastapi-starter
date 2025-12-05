@@ -4,13 +4,35 @@ This conftest contains fixtures that can be used by both unit and integration te
 Database-specific fixtures are in tests/integration/conftest.py.
 """
 
+import os
+
+# Set APP_ENV to testing before any app imports to disable rate limiting
+os.environ.setdefault("APP_ENV", "testing")
+
 from collections.abc import AsyncGenerator
 
 import pytest
 from fakeredis import aioredis as fakeredis_aio
 from redis.asyncio import Redis
 
-from src.app.core import redis as redis_module
+from src.app.core import rate_limit
+from src.app.core import redis as redis_core
+
+# --- Rate Limit Fixtures ---
+
+
+@pytest.fixture
+def reset_rate_limit_buckets() -> None:
+    """Reset rate limit in-memory state.
+
+    Use this fixture when you need to ensure rate limit state is clean.
+    """
+    rate_limit._rate_limit_buckets.clear()
+    rate_limit._script_sha = None
+    yield
+    rate_limit._rate_limit_buckets.clear()
+    rate_limit._script_sha = None
+
 
 # --- Redis Test Fixtures (shared) ---
 
@@ -37,7 +59,7 @@ async def mock_redis(fake_redis: Redis, monkeypatch: pytest.MonkeyPatch) -> Asyn
     Patches both src.app.core.redis and src.app.core.cache modules
     to ensure the fake redis is used everywhere.
     """
-    redis_module.reset_redis_state()
+    redis_core.reset_redis_state()
 
     async def _get_fake_redis() -> Redis:
         return fake_redis
@@ -46,7 +68,7 @@ async def mock_redis(fake_redis: Redis, monkeypatch: pytest.MonkeyPatch) -> Asyn
     monkeypatch.setattr("src.app.core.redis.get_redis", _get_fake_redis)
     monkeypatch.setattr("src.app.core.cache.get_redis", _get_fake_redis)
     yield fake_redis
-    redis_module.reset_redis_state()
+    redis_core.reset_redis_state()
 
 
 @pytest.fixture
@@ -59,7 +81,7 @@ async def mock_redis_unavailable(monkeypatch: pytest.MonkeyPatch) -> AsyncGenera
     Patches both src.app.core.redis and src.app.core.cache modules
     to ensure Redis appears unavailable everywhere.
     """
-    redis_module.reset_redis_state()
+    redis_core.reset_redis_state()
 
     async def _get_none() -> None:
         return None
@@ -68,4 +90,4 @@ async def mock_redis_unavailable(monkeypatch: pytest.MonkeyPatch) -> AsyncGenera
     monkeypatch.setattr("src.app.core.redis.get_redis", _get_none)
     monkeypatch.setattr("src.app.core.cache.get_redis", _get_none)
     yield
-    redis_module.reset_redis_state()
+    redis_core.reset_redis_state()
