@@ -92,11 +92,7 @@ class TenantService:
         """Get tenant by slug."""
         return await self.tenant_repo.get_by_slug(slug)
 
-    async def list_tenants(self, active_only: bool = True) -> list[Tenant]:
-        """List all tenants."""
-        return await self.tenant_repo.list_all(active_only)
-
-    async def list_tenants_paginated(
+    async def list_tenants(
         self, cursor: str | None, limit: int, active_only: bool = True
     ) -> tuple[list[Tenant], str | None, bool]:
         """List all tenants with cursor-based pagination.
@@ -109,13 +105,9 @@ class TenantService:
         Returns:
             Tuple of (items, next_cursor, has_more)
         """
-        return await self.tenant_repo.list_all_paginated(cursor, limit, active_only)
+        return await self.tenant_repo.list_all(cursor, limit, active_only)
 
-    async def list_user_tenants(self, user_id: UUID) -> list[Tenant]:
-        """List tenants where user has active membership."""
-        return await self.tenant_repo.list_by_user_membership(user_id)
-
-    async def list_user_tenants_paginated(
+    async def list_user_tenants(
         self, user_id: UUID, cursor: str | None, limit: int
     ) -> tuple[list[Tenant], str | None, bool]:
         """List tenants where user has active membership with cursor-based pagination.
@@ -128,7 +120,7 @@ class TenantService:
         Returns:
             Tuple of (items, next_cursor, has_more)
         """
-        return await self.tenant_repo.list_by_user_membership_paginated(user_id, cursor, limit)
+        return await self.tenant_repo.list_by_user_membership(user_id, cursor, limit)
 
     async def deactivate_tenant(self, tenant: Tenant) -> Tenant:
         """Deactivate a tenant."""

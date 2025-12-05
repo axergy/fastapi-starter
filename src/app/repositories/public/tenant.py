@@ -23,18 +23,10 @@ class TenantRepository(BaseRepository[Tenant]):
         tenant = await self.get_by_slug(slug)
         return tenant is not None
 
-    async def list_all(self, active_only: bool = True) -> list[Tenant]:
-        """List all tenants, optionally filtering by active status."""
-        query = select(Tenant)
-        if active_only:
-            query = query.where(Tenant.is_active == True)  # noqa: E712
-        result = await self.session.execute(query)
-        return list(result.scalars().all())
-
-    async def list_all_paginated(
+    async def list_all(
         self, cursor: str | None, limit: int, active_only: bool = True
     ) -> tuple[list[Tenant], str | None, bool]:
-        """List all tenants with pagination.
+        """List all tenants with cursor-based pagination.
 
         Args:
             cursor: Optional cursor for pagination
@@ -49,24 +41,7 @@ class TenantRepository(BaseRepository[Tenant]):
             query = query.where(Tenant.is_active == True)  # noqa: E712
         return await self.paginate(query, cursor, limit, Tenant.created_at)
 
-    async def list_by_user_membership(self, user_id: UUID) -> list[Tenant]:
-        """List tenants where user has active membership."""
-        query = (
-            select(Tenant)
-            .join(
-                UserTenantMembership,
-                Tenant.id == UserTenantMembership.tenant_id,  # type: ignore[arg-type]
-            )
-            .where(
-                UserTenantMembership.user_id == user_id,
-                UserTenantMembership.is_active == True,  # noqa: E712
-                Tenant.is_active == True,  # noqa: E712
-            )
-        )
-        result = await self.session.execute(query)
-        return list(result.scalars().all())
-
-    async def list_by_user_membership_paginated(
+    async def list_by_user_membership(
         self, user_id: UUID, cursor: str | None, limit: int
     ) -> tuple[list[Tenant], str | None, bool]:
         """List tenants where user has active membership (paginated).

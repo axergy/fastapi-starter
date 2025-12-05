@@ -165,9 +165,7 @@ async def list_tenants(
     Pass the `next_cursor` from a response to get the next page.
     """
     # Get only tenants the user has access to
-    tenants, next_cursor, has_more = await service.list_user_tenants_paginated(
-        current_user.id, cursor, limit
-    )
+    tenants, next_cursor, has_more = await service.list_user_tenants(current_user.id, cursor, limit)
     return PaginatedResponse(
         items=[TenantRead.model_validate(t) for t in tenants],
         next_cursor=next_cursor,

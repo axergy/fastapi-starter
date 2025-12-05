@@ -128,7 +128,7 @@ async def list_my_tenants(
     making it useful for tenant selection screens after login.
     Uses cursor-based pagination for efficient traversal.
     """
-    tenants, next_cursor, has_more = await tenant_service.list_user_tenants_paginated(
+    tenants, next_cursor, has_more = await tenant_service.list_user_tenants(
         current_user.id, cursor, limit
     )
     return PaginatedResponse(

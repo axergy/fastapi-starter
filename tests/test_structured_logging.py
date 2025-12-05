@@ -19,12 +19,16 @@ def capturing_logger():
     # Create a capturing logger instance
     cap_logger = CapturingLogger()
 
+    # Save original configuration to restore later
+    old_config = structlog.get_config()
+
     # Configure structlog to use the capturing logger
+    # Use *args, **kwargs to accept any arguments passed by structlog
     structlog.configure(
         processors=[structlog.contextvars.merge_contextvars],
         wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
-        logger_factory=lambda: cap_logger,
+        logger_factory=lambda *args, **kwargs: cap_logger,
         cache_logger_on_first_use=False,
     )
 
@@ -33,6 +37,8 @@ def capturing_logger():
     yield cap_logger
     # Clean up
     clear_request_context()
+    # Restore original configuration
+    structlog.configure(**old_config)
 
 
 def test_bind_request_context(capturing_logger):

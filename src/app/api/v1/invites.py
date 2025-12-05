@@ -134,9 +134,7 @@ async def list_invites(
     Uses cursor-based pagination for efficient traversal of large result sets.
     Pass the `next_cursor` from a response to get the next page.
     """
-    invites, next_cursor, has_more = await invite_service.list_pending_invites_paginated(
-        cursor, limit
-    )
+    invites, next_cursor, has_more = await invite_service.list_pending_invites(cursor, limit)
     return PaginatedResponse(
         items=[InviteRead.model_validate(inv) for inv in invites],
         next_cursor=next_cursor,

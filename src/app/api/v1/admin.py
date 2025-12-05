@@ -63,7 +63,7 @@ async def list_all_tenants(
     Includes both active and inactive tenants.
     Uses cursor-based pagination for efficient traversal.
     """
-    tenants, next_cursor, has_more = await tenant_service.list_tenants_paginated(
+    tenants, next_cursor, has_more = await tenant_service.list_tenants(
         cursor, limit, active_only=False
     )
     return PaginatedResponse(

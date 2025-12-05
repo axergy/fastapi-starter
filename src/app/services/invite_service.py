@@ -174,12 +174,21 @@ class InviteService:
             # Mark invite as accepted
             await self.invite_repo.mark_accepted(invite, user.id)
 
+            # Capture IDs before commit (to avoid lazy loading issues after commit)
+            invite_id = str(invite.id)
+            user_id = str(user.id)
+
             await self.session.commit()
+
+            # Refresh objects to ensure they're usable after commit
+            await self.session.refresh(invite)
+            await self.session.refresh(user)
+            await self.session.refresh(tenant)
 
             logger.info(
                 "Invite accepted by existing user",
-                invite_id=str(invite.id),
-                user_id=str(user.id),
+                invite_id=invite_id,
+                user_id=user_id,
             )
             return invite, user, tenant
 
@@ -256,13 +265,21 @@ class InviteService:
             # Mark invite as accepted
             await self.invite_repo.mark_accepted(invite, user.id)
 
+            # Capture IDs before commit (to avoid lazy loading issues after commit)
+            invite_id = str(invite.id)
+            user_id = str(user.id)
+
             await self.session.commit()
+
+            # Refresh objects to ensure they're usable after commit
+            await self.session.refresh(invite)
             await self.session.refresh(user)
+            await self.session.refresh(tenant)
 
             logger.info(
                 "Invite accepted by new user",
-                invite_id=str(invite.id),
-                user_id=str(user.id),
+                invite_id=invite_id,
+                user_id=user_id,
             )
             return invite, user, tenant
 
@@ -307,14 +324,7 @@ class InviteService:
             return None
         return invite
 
-    async def list_pending_invites(self, limit: int = 100, offset: int = 0) -> list[TenantInvite]:
-        """List pending invites for current tenant."""
-        if self.tenant_id is None:
-            raise ValueError("Tenant context required for listing invites")
-
-        return await self.invite_repo.get_pending_by_tenant(self.tenant_id, limit, offset)
-
-    async def list_pending_invites_paginated(
+    async def list_pending_invites(
         self, cursor: str | None, limit: int
     ) -> tuple[list[TenantInvite], str | None, bool]:
         """List pending invites for current tenant with cursor-based pagination.
@@ -329,7 +339,7 @@ class InviteService:
         if self.tenant_id is None:
             raise ValueError("Tenant context required for listing invites")
 
-        return await self.invite_repo.get_pending_by_tenant_paginated(self.tenant_id, cursor, limit)
+        return await self.invite_repo.get_pending_by_tenant(self.tenant_id, cursor, limit)
 
     async def cancel_invite(self, invite_id: UUID) -> TenantInvite:
         """Cancel a pending invite."""

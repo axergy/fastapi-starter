@@ -55,14 +55,19 @@ class TestListAllTenants:
             response.status_code == 200
         ), f"Expected 200, got {response.status_code}: {response.json()}"
         data = response.json()
-        assert isinstance(data, list)
+        # Response is now paginated
+        assert isinstance(data, dict)
+        assert "items" in data
+        assert "next_cursor" in data
+        assert "has_more" in data
+        items = data["items"]
         # At least the test tenant should exist
-        assert len(data) >= 1
+        assert len(items) >= 1
         # Verify tenant data structure
-        assert all("id" in t for t in data)
-        assert all("slug" in t for t in data)
-        assert all("name" in t for t in data)
-        assert all("status" in t for t in data)
+        assert all("id" in t for t in items)
+        assert all("slug" in t for t in items)
+        assert all("name" in t for t in items)
+        assert all("status" in t for t in items)
 
     async def test_list_tenants_as_regular_user_forbidden(
         self, client: AsyncClient, test_user: dict

@@ -39,22 +39,6 @@ class TenantInviteRepository(BaseRepository[TenantInvite]):
         return result.scalar_one_or_none()
 
     async def get_pending_by_tenant(
-        self, tenant_id: UUID, limit: int = 100, offset: int = 0
-    ) -> list[TenantInvite]:
-        """List pending invites for a tenant."""
-        result = await self.session.execute(
-            select(TenantInvite)
-            .where(
-                TenantInvite.tenant_id == tenant_id,
-                TenantInvite.status == InviteStatus.PENDING.value,
-            )
-            .order_by(TenantInvite.created_at.desc())  # type: ignore[attr-defined]
-            .limit(limit)
-            .offset(offset)
-        )
-        return list(result.scalars().all())
-
-    async def get_pending_by_tenant_paginated(
         self, tenant_id: UUID, cursor: str | None, limit: int
     ) -> tuple[list[TenantInvite], str | None, bool]:
         """List pending invites for a tenant with cursor-based pagination.

@@ -1,6 +1,6 @@
-"""Security utilities - crypto, headers, validators.
+"""Security utilities - crypto and validators.
 
-Re-exports all security-related functions for backward compatibility.
+Re-exports all security-related functions for convenience.
 """
 
 from src.app.core.security.crypto import (
@@ -10,7 +10,6 @@ from src.app.core.security.crypto import (
     hash_password,
     verify_password,
 )
-from src.app.core.security.headers import SecurityHeadersMiddleware
 from src.app.core.security.validators import validate_schema_name
 
 __all__ = [
@@ -20,8 +19,6 @@ __all__ = [
     "decode_token",
     "hash_password",
     "verify_password",
-    # Middleware
-    "SecurityHeadersMiddleware",
     # Validators
     "validate_schema_name",
 ]
