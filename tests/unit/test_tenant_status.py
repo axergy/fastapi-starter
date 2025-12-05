@@ -6,6 +6,8 @@ import pytest
 
 from src.app.models.public import Tenant, TenantStatus
 
+pytestmark = pytest.mark.unit
+
 
 class TestTenantStatusEnum:
     """Tests for TenantStatus enum values and transitions."""

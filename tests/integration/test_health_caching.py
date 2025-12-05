@@ -9,6 +9,8 @@ from httpx import ASGITransport, AsyncClient
 from src.app.core.health import reset_health_cache
 from src.app.main import create_app
 
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
 
 @pytest.fixture(autouse=True)
 def clear_health_cache():
@@ -18,7 +20,6 @@ def clear_health_cache():
     reset_health_cache()
 
 
-@pytest.mark.asyncio
 async def test_health_check_caching():
     """Test that health check results are cached for 10 seconds."""
     app = create_app()
@@ -46,7 +47,6 @@ async def test_health_check_caching():
         assert data2["cache_age_seconds"] < 10
 
 
-@pytest.mark.asyncio
 async def test_health_check_cache_expiry():
     """Test that health check cache expires after TTL."""
     app = create_app()
@@ -86,7 +86,6 @@ async def test_health_check_cache_expiry():
             assert data3["cached"] is False
 
 
-@pytest.mark.asyncio
 async def test_health_check_no_db_session_when_cached():
     """Test that cached health checks don't create database sessions."""
     app = create_app()
@@ -108,7 +107,6 @@ async def test_health_check_no_db_session_when_cached():
             assert mock_session.call_count == 1, "Cache should prevent new DB session"
 
 
-@pytest.mark.asyncio
 async def test_health_check_includes_status_fields():
     """Test that health check response includes all required fields."""
     app = create_app()
@@ -134,7 +132,6 @@ async def test_health_check_includes_status_fields():
         assert isinstance(data["timestamp"], int | float)
 
 
-@pytest.mark.asyncio
 async def test_health_check_cache_includes_age():
     """Test that cached responses include cache age."""
     app = create_app()

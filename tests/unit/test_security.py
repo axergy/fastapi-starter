@@ -6,6 +6,8 @@ from pydantic import ValidationError
 from src.app.core.security import validate_schema_name
 from src.app.schemas.auth import RegisterRequest
 
+pytestmark = pytest.mark.unit
+
 
 class TestSchemaNameValidation:
     """Tests for schema name SQL injection prevention."""

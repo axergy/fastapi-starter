@@ -7,11 +7,12 @@ import pytest
 
 from src.app.core.shutdown import RequestTracker
 
+pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
+
 
 class TestRequestTracker:
     """Test the RequestTracker class."""
 
-    @pytest.mark.asyncio
     async def test_request_tracking(self):
         """Test that requests are tracked correctly."""
         tracker = RequestTracker()
@@ -25,7 +26,6 @@ class TestRequestTracker:
 
         assert tracker.in_flight_count == 0
 
-    @pytest.mark.asyncio
     async def test_multiple_concurrent_requests(self):
         """Test tracking multiple concurrent requests."""
         tracker = RequestTracker()
@@ -49,7 +49,6 @@ class TestRequestTracker:
         await asyncio.gather(*tasks)
         assert tracker.in_flight_count == 0
 
-    @pytest.mark.asyncio
     async def test_shutdown_with_no_requests(self):
         """Test shutdown when there are no in-flight requests."""
         tracker = RequestTracker()
@@ -61,7 +60,6 @@ class TestRequestTracker:
         drained = await tracker.wait_for_drain(timeout=1.0)
         assert drained is True
 
-    @pytest.mark.asyncio
     async def test_shutdown_with_in_flight_requests(self):
         """Test shutdown waits for in-flight requests to complete."""
         tracker = RequestTracker()
@@ -87,7 +85,6 @@ class TestRequestTracker:
 
         await task
 
-    @pytest.mark.asyncio
     async def test_shutdown_timeout(self):
         """Test shutdown timeout when requests don't complete in time."""
         tracker = RequestTracker()
@@ -113,7 +110,6 @@ class TestRequestTracker:
         with contextlib.suppress(asyncio.CancelledError):
             await task
 
-    @pytest.mark.asyncio
     async def test_shutdown_with_multiple_requests(self):
         """Test shutdown with multiple in-flight requests."""
         tracker = RequestTracker()

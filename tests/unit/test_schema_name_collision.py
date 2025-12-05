@@ -12,6 +12,8 @@ from src.app.core.security.validators import MAX_SCHEMA_LENGTH, validate_schema_
 from src.app.models.public.tenant import MAX_SLUG_LENGTH, Tenant
 from src.app.schemas.auth import RegisterRequest
 
+pytestmark = pytest.mark.unit
+
 
 class TestSlugLengthValidation:
     """Test slug length validation at schema level."""

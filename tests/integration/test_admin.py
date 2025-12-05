@@ -6,15 +6,14 @@ from uuid import uuid7
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from src.app.core import db
 from src.app.core.security import create_access_token
 from src.app.main import create_app
+from tests.factories import TenantFactory
 
-# Note: test_superuser_with_tenant fixture is defined in conftest.py
-
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class TestListAllTenants:
@@ -190,16 +189,10 @@ class TestDeleteTenant:
     """Tests for DELETE /api/v1/admin/tenants/{tenant_id} endpoint."""
 
     async def test_delete_tenant_as_superuser(
-        self, engine: AsyncEngine, test_superuser: dict, test_tenant: str
+        self, engine: AsyncEngine, test_superuser: dict, test_tenant_obj
     ) -> None:
         """Test superuser can delete a tenant."""
-        # Get tenant_id from DB
-        async with engine.connect() as conn:
-            result = await conn.execute(
-                text("SELECT id FROM public.tenants WHERE slug = :slug"),
-                {"slug": test_tenant},
-            )
-            tenant_id = str(result.scalar_one())
+        tenant_id = str(test_tenant_obj.id)
 
         # Create access token for superuser
         access_token = create_access_token(
@@ -268,21 +261,16 @@ class TestDeleteTenant:
         mock_client.start_workflow.assert_not_called()
 
     async def test_delete_tenant_already_deleted(
-        self, engine: AsyncEngine, test_superuser: dict, test_tenant: str
+        self, engine: AsyncEngine, test_superuser: dict, test_tenant_obj
     ) -> None:
         """Test 404 when tenant already soft-deleted."""
-        # Get tenant_id and mark as deleted
-        async with engine.connect() as conn:
-            result = await conn.execute(
-                text("SELECT id FROM public.tenants WHERE slug = :slug"),
-                {"slug": test_tenant},
-            )
-            tenant_id = str(result.scalar_one())
+        tenant_id = str(test_tenant_obj.id)
 
-            # Soft-delete the tenant
+        # Soft-delete the tenant
+        async with engine.connect() as conn:
             await conn.execute(
-                text("UPDATE public.tenants SET deleted_at = now() WHERE slug = :slug"),
-                {"slug": test_tenant},
+                text("UPDATE public.tenants SET deleted_at = now() WHERE id = :id"),
+                {"id": test_tenant_obj.id},
             )
             await conn.commit()
 
@@ -338,16 +326,10 @@ class TestDeleteTenant:
         assert "Superuser privileges required" in response.json()["detail"]
 
     async def test_delete_tenant_no_auth_unauthorized(
-        self, engine: AsyncEngine, test_tenant: str
+        self, engine: AsyncEngine, test_tenant_obj
     ) -> None:
         """Test unauthenticated request returns 401."""
-        # Get tenant_id from DB
-        async with engine.connect() as conn:
-            result = await conn.execute(
-                text("SELECT id FROM public.tenants WHERE slug = :slug"),
-                {"slug": test_tenant},
-            )
-            tenant_id = str(result.scalar_one())
+        tenant_id = str(test_tenant_obj.id)
 
         await db.dispose_engine()
         app = create_app()
@@ -365,23 +347,18 @@ class TestBulkDeleteTenants:
     """Tests for DELETE /api/v1/admin/tenants endpoint."""
 
     async def test_bulk_delete_by_status(
-        self, engine: AsyncEngine, test_superuser: dict, test_tenant: str
+        self, engine: AsyncEngine, db_session: AsyncSession, test_superuser: dict, test_tenant: str
     ) -> None:
         """Test bulk delete with status filter."""
-        # Create 2 failed tenants in DB with unique slugs
-        failed_slugs = []
-        async with engine.connect() as conn:
-            for i in range(2):
-                slug = f"failed_{uuid7().hex[-8:]}"
-                failed_slugs.append(slug)
-                await conn.execute(
-                    text("""
-                        INSERT INTO tenants (id, name, slug, status, is_active, created_at)
-                        VALUES (gen_random_uuid(), :name, :slug, 'failed', false, now())
-                    """),
-                    {"name": f"Failed Co {i}", "slug": slug},
-                )
-            await conn.commit()
+        # Create 2 failed tenants using factory
+        failed_tenants = []
+        for _ in range(2):
+            tenant = TenantFactory.failed()
+            db_session.add(tenant)
+            failed_tenants.append(tenant)
+        await db_session.commit()
+
+        failed_slugs = [t.slug for t in failed_tenants]
 
         access_token = create_access_token(
             subject=test_superuser["id"],
@@ -503,18 +480,16 @@ class TestTenantRepositoryDeletion:
     """Tests for TenantRepository.list_for_deletion method."""
 
     async def test_list_for_deletion_excludes_deleted(
-        self, engine: AsyncEngine, test_tenant: str
+        self, engine: AsyncEngine, test_tenant_obj
     ) -> None:
         """Test list_for_deletion excludes soft-deleted tenants."""
-        from sqlalchemy.ext.asyncio import AsyncSession
-
         from src.app.repositories import TenantRepository
 
         # Mark test_tenant as deleted
         async with engine.connect() as conn:
             await conn.execute(
-                text("UPDATE public.tenants SET deleted_at = now() WHERE slug = :slug"),
-                {"slug": test_tenant},
+                text("UPDATE public.tenants SET deleted_at = now() WHERE id = :id"),
+                {"id": test_tenant_obj.id},
             )
             await conn.commit()
 
@@ -525,27 +500,18 @@ class TestTenantRepositoryDeletion:
 
         # Assert test_tenant is NOT in results (since it's deleted)
         tenant_slugs = [t.slug for t in tenants]
-        assert test_tenant not in tenant_slugs
+        assert test_tenant_obj.slug not in tenant_slugs
 
     async def test_list_for_deletion_with_status_filter(
-        self, engine: AsyncEngine, test_tenant: str
+        self, engine: AsyncEngine, db_session: AsyncSession, test_tenant: str
     ) -> None:
         """Test list_for_deletion filters by status."""
-        from sqlalchemy.ext.asyncio import AsyncSession
-
         from src.app.repositories import TenantRepository
 
-        # Create a failed tenant
-        failed_slug = f"failed_{uuid7().hex[-8:]}"
-        async with engine.connect() as conn:
-            await conn.execute(
-                text("""
-                    INSERT INTO tenants (id, name, slug, status, is_active, created_at)
-                    VALUES (gen_random_uuid(), 'Failed Co', :slug, 'failed', false, now())
-                """),
-                {"slug": failed_slug},
-            )
-            await conn.commit()
+        # Create a failed tenant using factory
+        failed_tenant = TenantFactory.failed()
+        db_session.add(failed_tenant)
+        await db_session.commit()
 
         try:
             # Test with status filter
@@ -555,7 +521,7 @@ class TestTenantRepositoryDeletion:
 
             tenant_slugs = [t.slug for t in tenants]
             # Our failed tenant should be in results
-            assert failed_slug in tenant_slugs
+            assert failed_tenant.slug in tenant_slugs
             # test_tenant is 'ready', so should NOT be returned
             assert test_tenant not in tenant_slugs
         finally:
@@ -563,14 +529,12 @@ class TestTenantRepositoryDeletion:
             async with engine.connect() as conn:
                 await conn.execute(
                     text("DELETE FROM tenants WHERE slug = :slug"),
-                    {"slug": failed_slug},
+                    {"slug": failed_tenant.slug},
                 )
                 await conn.commit()
 
     async def test_list_for_deletion_no_filter(self, engine: AsyncEngine, test_tenant: str) -> None:
         """Test list_for_deletion without filter returns all non-deleted."""
-        from sqlalchemy.ext.asyncio import AsyncSession
-
         from src.app.repositories import TenantRepository
 
         async with AsyncSession(engine) as session:

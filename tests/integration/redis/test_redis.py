@@ -5,6 +5,8 @@ import pytest
 from src.app.core import redis as redis_module
 from src.app.core.redis import close_redis, get_redis, reset_redis_state
 
+pytestmark = pytest.mark.integration
+
 
 class TestGetRedis:
     """Tests for get_redis() function."""

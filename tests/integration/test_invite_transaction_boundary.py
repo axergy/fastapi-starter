@@ -8,94 +8,46 @@ This test suite validates that:
 
 import secrets
 from hashlib import sha256
-from uuid import uuid7
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from src.app.core.security import hash_password
+from tests.factories import TenantFactory, UserFactory
+from tests.helpers import create_invite_with_inviter
+
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 @pytest.fixture
-async def invite_token_and_tenant(engine: AsyncEngine, test_tenant: str) -> tuple[str, str, str]:
+async def invite_token_and_tenant(
+    engine: AsyncEngine, db_session: AsyncSession, test_tenant_obj
+) -> tuple[str, str, str]:
     """Create an invite token for testing.
 
     Returns (token, invite_email, tenant_id).
     """
-    invite_email = f"invite_{uuid7().hex[-8:]}@example.com"
-    token = secrets.token_urlsafe(32)
-    token_hash = sha256(token.encode()).hexdigest()
+    invite, inviter, token = await create_invite_with_inviter(db_session, test_tenant_obj)
+    await db_session.commit()
 
-    # Create a user to be the inviter
-    inviter_id = uuid7()
-
-    async with engine.connect() as conn:
-        # Get tenant_id
-        result = await conn.execute(
-            text("SELECT id FROM public.tenants WHERE slug = :slug"),
-            {"slug": test_tenant},
-        )
-        tenant_id = str(result.scalar_one())
-
-        # Create inviter user
-        await conn.execute(
-            text(
-                """
-                INSERT INTO public.users
-                (id, email, hashed_password, full_name, is_active, is_superuser,
-                 email_verified, email_verified_at, created_at, updated_at)
-                VALUES (:id, :email, :hashed_password, :full_name, true, false,
-                 true, now(), now(), now())
-                """
-            ),
-            {
-                "id": inviter_id,
-                "email": f"inviter_{uuid7().hex[-8:]}@example.com",
-                "hashed_password": hash_password("password123"),
-                "full_name": "Inviter User",
-            },
-        )
-
-        # Create invite
-        await conn.execute(
-            text(
-                """
-                INSERT INTO public.tenant_invites
-                (id, tenant_id, email, token_hash, role, status,
-                 invited_by_user_id, expires_at, created_at)
-                VALUES (gen_random_uuid(), :tenant_id, :email, :token_hash,
-                 'member', 'pending', :invited_by_user_id, now() + interval '7 days', now())
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "email": invite_email,
-                "token_hash": token_hash,
-                "invited_by_user_id": inviter_id,
-            },
-        )
-        await conn.commit()
-
-    yield token, invite_email, tenant_id
+    yield token, invite.email, str(test_tenant_obj.id)
 
     # Cleanup: delete invite first (has FK to inviter), then inviter user
     async with engine.connect() as conn:
         await conn.execute(
             text("DELETE FROM public.tenant_invites WHERE invited_by_user_id = :id"),
-            {"id": inviter_id},
+            {"id": inviter.id},
         )
         await conn.execute(
             text("DELETE FROM public.users WHERE id = :id"),
-            {"id": inviter_id},
+            {"id": inviter.id},
         )
         await conn.commit()
 
 
-@pytest.mark.asyncio
 async def test_accept_invite_deleted_tenant(
     engine: AsyncEngine,
-    test_tenant: str,
+    test_tenant_obj,
     invite_token_and_tenant: tuple[str, str, str],
 ):
     """Test that accepting an invite for a deleted tenant fails.
@@ -103,8 +55,6 @@ async def test_accept_invite_deleted_tenant(
     This validates that the tenant check happens WITHIN the transaction,
     preventing the race condition where tenant is deleted after invite is accepted.
     """
-    from sqlalchemy.ext.asyncio import AsyncSession
-
     from src.app.repositories import (
         MembershipRepository,
         TenantInviteRepository,
@@ -118,8 +68,8 @@ async def test_accept_invite_deleted_tenant(
     # SOFT-DELETE the tenant (set deleted_at)
     async with engine.connect() as conn:
         await conn.execute(
-            text("UPDATE public.tenants SET deleted_at = now() WHERE slug = :slug"),
-            {"slug": test_tenant},
+            text("UPDATE public.tenants SET deleted_at = now() WHERE id = :id"),
+            {"id": test_tenant_obj.id},
         )
         await conn.commit()
 
@@ -149,70 +99,41 @@ async def test_accept_invite_deleted_tenant(
     # Cleanup - un-delete tenant
     async with engine.connect() as conn:
         await conn.execute(
-            text("UPDATE public.tenants SET deleted_at = NULL WHERE slug = :slug"),
-            {"slug": test_tenant},
+            text("UPDATE public.tenants SET deleted_at = NULL WHERE id = :id"),
+            {"id": test_tenant_obj.id},
         )
         await conn.commit()
 
 
-@pytest.mark.asyncio
 async def test_accept_invite_nonexistent_tenant(
     engine: AsyncEngine,
-    test_tenant: str,
+    db_session: AsyncSession,
 ):
     """Test that accepting an invite for a hard-deleted tenant fails.
 
     This simulates the edge case where tenant is hard-deleted (not just soft-deleted)
     after an invite was created.
     """
-
-    invite_email = f"invite_{uuid7().hex[-8:]}@example.com"
+    invite_email = f"invite_{secrets.token_hex(4)}@example.com"
     token = secrets.token_urlsafe(32)
     token_hash = sha256(token.encode()).hexdigest()
 
     # Create a temporary tenant that we'll hard-delete after creating the invite
-    temp_tenant_slug = f"temp_{uuid7().hex[-8:]}"
-    user_id = uuid7()
-    inviter_id = uuid7()
+    temp_tenant = TenantFactory.build()
+    db_session.add(temp_tenant)
+    await db_session.flush()
+
+    # Create inviter user
+    inviter = UserFactory.build()
+    db_session.add(inviter)
+    await db_session.flush()
+
+    # Create user who will accept invite
+    user = UserFactory.build(email=invite_email)
+    db_session.add(user)
+    await db_session.commit()
 
     async with engine.connect() as conn:
-        # Create temporary tenant
-        await conn.execute(
-            text(
-                """
-                INSERT INTO public.tenants (id, name, slug, status, is_active, created_at)
-                VALUES (gen_random_uuid(), :name, :slug, 'ready', true, now())
-                """
-            ),
-            {"name": "Temp Tenant", "slug": temp_tenant_slug},
-        )
-
-        # Get the temp tenant_id
-        result = await conn.execute(
-            text("SELECT id FROM public.tenants WHERE slug = :slug"),
-            {"slug": temp_tenant_slug},
-        )
-        temp_tenant_id = result.scalar_one()
-
-        # Create inviter user first (for foreign key)
-        await conn.execute(
-            text(
-                """
-                INSERT INTO public.users
-                (id, email, hashed_password, full_name, is_active, is_superuser,
-                 email_verified, email_verified_at, created_at, updated_at)
-                VALUES (:id, :email, :hashed_password, :full_name, true, false,
-                 true, now(), now(), now())
-                """
-            ),
-            {
-                "id": inviter_id,
-                "email": f"inviter_{uuid7().hex[-8:]}@example.com",
-                "hashed_password": hash_password("password123"),
-                "full_name": "Inviter User",
-            },
-        )
-
         # Create invite pointing to the temp tenant
         await conn.execute(
             text(
@@ -225,60 +146,34 @@ async def test_accept_invite_nonexistent_tenant(
                 """
             ),
             {
-                "tenant_id": temp_tenant_id,
+                "tenant_id": temp_tenant.id,
                 "email": invite_email,
                 "token_hash": token_hash,
-                "invited_by_user_id": inviter_id,
-            },
-        )
-
-        # Create user
-        await conn.execute(
-            text(
-                """
-                INSERT INTO public.users
-                (id, email, hashed_password, full_name, is_active, is_superuser,
-                 email_verified, email_verified_at, created_at, updated_at)
-                VALUES (:id, :email, :hashed_password, :full_name, true, false,
-                 true, now(), now(), now())
-                """
-            ),
-            {
-                "id": user_id,
-                "email": invite_email,
-                "hashed_password": hash_password("password123"),
-                "full_name": "Test User",
+                "invited_by_user_id": inviter.id,
             },
         )
 
         # Now HARD-DELETE the tenant (simulate catastrophic deletion)
         # First delete the invite's FK constraint by deleting the invite
-        # Actually, we need to keep the invite but delete the tenant
-        # This requires disabling FK checks temporarily or using SET NULL
-        # For this test, let's just delete the invite's reference to tenant
-        # Actually the simplest approach: soft-delete returns same error, so use that
         await conn.execute(
             text("DELETE FROM public.tenant_invites WHERE email = :email"),
             {"email": invite_email},
         )
         await conn.execute(
-            text("DELETE FROM public.tenants WHERE slug = :slug"),
-            {"slug": temp_tenant_slug},
+            text("DELETE FROM public.tenants WHERE id = :id"),
+            {"id": temp_tenant.id},
         )
-
-        # Re-create invite with NULL tenant_id isn't possible due to FK
-        # So let's test with soft-delete scenario which has same behavior
         await conn.commit()
 
     # Cleanup remaining users
     async with engine.connect() as conn:
         await conn.execute(
             text("DELETE FROM public.users WHERE id = :id"),
-            {"id": user_id},
+            {"id": user.id},
         )
         await conn.execute(
             text("DELETE FROM public.users WHERE id = :id"),
-            {"id": inviter_id},
+            {"id": inviter.id},
         )
         await conn.commit()
 
@@ -287,10 +182,9 @@ async def test_accept_invite_nonexistent_tenant(
     # "tenant no longer available" error path adequately
 
 
-@pytest.mark.asyncio
 async def test_accept_invite_success_returns_tenant(
     engine: AsyncEngine,
-    test_tenant: str,
+    test_tenant_obj,
     invite_token_and_tenant: tuple[str, str, str],
 ):
     """Test that accepting invite successfully returns tenant object.
@@ -298,8 +192,6 @@ async def test_accept_invite_success_returns_tenant(
     This validates that the tenant is retrieved within the transaction and
     returned to the caller, eliminating the need for a separate query.
     """
-    from sqlalchemy.ext.asyncio import AsyncSession
-
     from src.app.models.public import Tenant
     from src.app.repositories import (
         MembershipRepository,
@@ -339,7 +231,7 @@ async def test_accept_invite_success_returns_tenant(
         assert new_user.email == invite_email
         assert tenant is not None
         assert isinstance(tenant, Tenant)
-        assert tenant.slug == test_tenant
+        assert tenant.slug == test_tenant_obj.slug
         assert tenant.deleted_at is None
         assert str(tenant.id) == tenant_id
 
@@ -363,10 +255,9 @@ async def test_accept_invite_success_returns_tenant(
         await conn.commit()
 
 
-@pytest.mark.asyncio
 async def test_api_accept_invite_deleted_tenant(
     engine: AsyncEngine,
-    test_tenant: str,
+    test_tenant_obj,
     client_no_tenant,
     invite_token_and_tenant: tuple[str, str, str],
 ):
@@ -379,8 +270,8 @@ async def test_api_accept_invite_deleted_tenant(
     # Soft-delete the tenant
     async with engine.connect() as conn:
         await conn.execute(
-            text("UPDATE public.tenants SET deleted_at = now() WHERE slug = :slug"),
-            {"slug": test_tenant},
+            text("UPDATE public.tenants SET deleted_at = now() WHERE id = :id"),
+            {"id": test_tenant_obj.id},
         )
         await conn.commit()
 
@@ -408,7 +299,7 @@ async def test_api_accept_invite_deleted_tenant(
 
         # Cleanup
         await conn.execute(
-            text("UPDATE public.tenants SET deleted_at = NULL WHERE slug = :slug"),
-            {"slug": test_tenant},
+            text("UPDATE public.tenants SET deleted_at = NULL WHERE id = :id"),
+            {"id": test_tenant_obj.id},
         )
         await conn.commit()

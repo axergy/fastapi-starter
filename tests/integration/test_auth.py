@@ -6,7 +6,7 @@ from uuid import uuid7
 import pytest
 from httpx import AsyncClient
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class TestRegistration:

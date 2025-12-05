@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 
 from src.app.main import create_app
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def client() -> TestClient:

@@ -9,6 +9,8 @@ from httpx import AsyncClient
 
 from src.app.temporal.worker import run_health_server
 
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
 
 def get_free_port() -> int:
     """Get a free port number."""
@@ -19,7 +21,6 @@ def get_free_port() -> int:
     return port
 
 
-@pytest.mark.asyncio
 async def test_health_endpoint():
     """Test that health endpoint returns correct status."""
     port = get_free_port()
@@ -44,7 +45,6 @@ async def test_health_endpoint():
             await task
 
 
-@pytest.mark.asyncio
 async def test_ready_endpoint():
     """Test that ready endpoint returns correct status."""
     port = get_free_port()

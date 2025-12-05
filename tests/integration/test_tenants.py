@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from src.app.core import db
 from src.app.main import create_app
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 async def test_health_check(engine: AsyncEngine) -> None:

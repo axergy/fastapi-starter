@@ -36,6 +36,7 @@ dev = [
     "mypy>=1.13.0",
     "pre-commit>=4.0.0",
     "fakeredis>=2.26.0",
+    "polyfactory>=2.17.0",
 ]
 
 [build-system]
@@ -70,6 +71,14 @@ indent-style = "space"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (require DB/Redis/HTTP)",
+    "slow: Tests that take longer to run",
+]
 
 # --- MyPy Configuration ---
 [tool.mypy]

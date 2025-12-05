@@ -1,6 +1,6 @@
 """Tests for structured logging context."""
 
-from uuid import uuid4
+from uuid import uuid7
 
 import pytest
 import structlog
@@ -11,6 +11,8 @@ from src.app.core.logging import (
     bind_user_context,
     clear_request_context,
 )
+
+pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
@@ -68,8 +70,8 @@ def test_bind_request_context_with_none(capturing_logger):
 
 def test_bind_user_context(capturing_logger):
     """Test binding user and tenant context to logs."""
-    user_id = uuid4()
-    tenant_id = uuid4()
+    user_id = uuid7()
+    tenant_id = uuid7()
     email = "test@example.com"
 
     bind_user_context(user_id, tenant_id, email)
@@ -85,8 +87,8 @@ def test_bind_user_context(capturing_logger):
 
 def test_bind_user_context_without_email(capturing_logger):
     """Test binding user context without email."""
-    user_id = uuid4()
-    tenant_id = uuid4()
+    user_id = uuid7()
+    tenant_id = uuid7()
 
     bind_user_context(user_id, tenant_id)
     logger = structlog.get_logger()
@@ -102,8 +104,8 @@ def test_bind_user_context_without_email(capturing_logger):
 def test_clear_request_context(capturing_logger):
     """Test clearing request context."""
     request_id = "test-request-123"
-    user_id = uuid4()
-    tenant_id = uuid4()
+    user_id = uuid7()
+    tenant_id = uuid7()
 
     # Bind context
     bind_request_context(request_id)
@@ -125,8 +127,8 @@ def test_clear_request_context(capturing_logger):
 def test_context_accumulation(capturing_logger):
     """Test that context accumulates across multiple bind calls."""
     request_id = "test-request-123"
-    user_id = uuid4()
-    tenant_id = uuid4()
+    user_id = uuid7()
+    tenant_id = uuid7()
 
     # Bind request context first
     bind_request_context(request_id)

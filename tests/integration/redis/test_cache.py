@@ -1,5 +1,6 @@
 """Tests for token blacklist cache module (src/app/core/cache.py)."""
 
+import pytest
 from redis.asyncio import Redis
 
 from src.app.core.cache import (
@@ -8,6 +9,8 @@ from src.app.core.cache import (
     blacklist_tokens,
     is_token_blacklisted,
 )
+
+pytestmark = pytest.mark.integration
 
 
 class TestBlacklistToken:
