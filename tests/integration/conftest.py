@@ -53,8 +53,10 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
 async def db_session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession]:
     """Provide an async session for database operations.
 
-    Note: This session auto-commits on context exit. For transaction rollback
-    based cleanup, use the individual fixtures which handle their own cleanup.
+    IMPORTANT: The AsyncSession context manager only closes the session on exit;
+    it does NOT auto-commit. Tests must explicitly call `await session.commit()`
+    to persist changes to the database. Alternatively, use fixtures like
+    `test_tenant` or `test_user` which handle commit/rollback internally.
     """
     async with AsyncSession(engine, expire_on_commit=False) as session:
         yield session

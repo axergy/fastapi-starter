@@ -4,10 +4,40 @@ These utilities handle proper FK-constraint-aware cleanup of test data.
 The delete order matters due to foreign key relationships.
 """
 
+import re
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+# Strict pattern for tenant schema names: tenant_ followed by valid slug
+# Must match the validation in src/app/core/security/validators.py
+_SCHEMA_NAME_PATTERN = re.compile(r"^tenant_[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
+
+
+def _validate_schema_name_for_drop(schema_name: str) -> None:
+    """Validate schema name before using in DROP SCHEMA statement.
+
+    This prevents SQL injection by ensuring schema_name matches the strict
+    tenant naming convention before interpolating into SQL.
+
+    Args:
+        schema_name: The schema name to validate
+
+    Raises:
+        ValueError: If schema name doesn't match expected tenant format
+    """
+    if not schema_name or not isinstance(schema_name, str):
+        raise ValueError("Schema name must be a non-empty string")
+
+    if len(schema_name) > 63:
+        raise ValueError(f"Schema name '{schema_name}' exceeds PostgreSQL 63-char limit")
+
+    if not _SCHEMA_NAME_PATTERN.match(schema_name):
+        raise ValueError(
+            f"Invalid schema name format: '{schema_name}'. "
+            "Must match pattern 'tenant_<slug>' with lowercase alphanumeric slug."
+        )
 
 
 async def cleanup_tenant_cascade(conn: AsyncConnection, tenant_id: UUID) -> None:
@@ -57,9 +87,19 @@ async def cleanup_user_cascade(conn: AsyncConnection, user_id: UUID) -> None:
 
 
 async def drop_tenant_schema(conn: AsyncConnection, schema_name: str) -> None:
-    """Drop tenant schema.
+    """Drop tenant schema with SQL injection protection.
 
-    Note: schema_name should already be validated before calling this function.
-    This uses string formatting because schema names cannot be parameterized in SQL.
+    Validates schema_name matches strict tenant naming convention before
+    executing DROP SCHEMA. Schema names cannot be parameterized in SQL,
+    so validation is critical to prevent injection attacks.
+
+    Args:
+        conn: Async database connection
+        schema_name: Must match pattern 'tenant_<slug>' (e.g., 'tenant_acme')
+
+    Raises:
+        ValueError: If schema_name doesn't match expected tenant format
     """
+    _validate_schema_name_for_drop(schema_name)
+    # Safe to interpolate after validation - pattern only allows [a-z0-9_]
     await conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
