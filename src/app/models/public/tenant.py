@@ -5,8 +5,12 @@ from uuid import UUID, uuid7
 
 from sqlmodel import Field, SQLModel
 
+from src.app.core.security.validators import MAX_SCHEMA_LENGTH, validate_schema_name
 from src.app.models.base import utc_now
 from src.app.models.enums import TenantStatus
+
+# Max slug length: PostgreSQL limit (63) - prefix length (7 for "tenant_")
+MAX_SLUG_LENGTH = MAX_SCHEMA_LENGTH - len("tenant_")  # 56
 
 
 class Tenant(SQLModel, table=True):
@@ -17,7 +21,7 @@ class Tenant(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
     name: str = Field(max_length=100, index=True)
-    slug: str = Field(max_length=50, unique=True, index=True)
+    slug: str = Field(max_length=MAX_SLUG_LENGTH, unique=True, index=True)
     status: str = Field(default=TenantStatus.PROVISIONING.value)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utc_now)
@@ -25,7 +29,18 @@ class Tenant(SQLModel, table=True):
 
     @property
     def schema_name(self) -> str:
-        return f"tenant_{self.slug}"
+        """Get the schema name for this tenant.
+
+        Returns:
+            Schema name in format 'tenant_{slug}'
+
+        Raises:
+            ValueError: If the resulting schema name exceeds PostgreSQL's 63-char limit
+                or contains invalid characters
+        """
+        name = f"tenant_{self.slug}"
+        validate_schema_name(name)
+        return name
 
     @property
     def status_enum(self) -> TenantStatus:

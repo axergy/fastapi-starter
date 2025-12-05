@@ -79,10 +79,13 @@ async def login(
     response_model=RefreshResponse,
     responses={
         200: {
-            "description": "Token refreshed successfully",
+            "description": "Token refreshed successfully with token rotation",
             "content": {
                 "application/json": {
-                    "example": {"access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    }
                 }
             },
         },
@@ -93,16 +96,21 @@ async def login(
 async def refresh(
     request: Request, refresh_data: RefreshRequest, service: AuthServiceDep
 ) -> RefreshResponse:
-    """Refresh access token using refresh token."""
-    access_token = await service.refresh_access_token(refresh_data.refresh_token)
+    """Refresh access token using refresh token.
 
-    if access_token is None:
+    Implements token rotation: returns both a new access token AND a new refresh token.
+    The old refresh token is atomically revoked to prevent replay attacks.
+    """
+    result = await service.refresh_access_token(refresh_data.refresh_token)
+
+    if result is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
 
-    return RefreshResponse(access_token=access_token)
+    access_token, refresh_token = result
+    return RefreshResponse(access_token=access_token, refresh_token=refresh_token)
 
 
 @router.post(

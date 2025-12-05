@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid7
 
 import argon2
 from jose import JWTError, jwt
@@ -69,7 +69,11 @@ def create_refresh_token(
     subject: str | UUID,
     tenant_id: str | UUID,
 ) -> tuple[str, datetime]:
-    """Create refresh token. Returns (token, expiry as naive UTC datetime)."""
+    """Create refresh token. Returns (token, expiry as naive UTC datetime).
+
+    Includes a unique JWT ID (jti) to ensure each token is unique, even if created
+    in the same second for the same user. This is crucial for token rotation.
+    """
     settings = get_settings()
     expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
 
@@ -78,6 +82,7 @@ def create_refresh_token(
         "tenant_id": str(tenant_id),
         "exp": expire,
         "type": "refresh",
+        "jti": str(uuid7()),  # Unique ID for each token to prevent hash collisions
     }
     token: str = jwt.encode(  # type: ignore[assignment]
         to_encode,

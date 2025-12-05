@@ -26,6 +26,7 @@ class RefreshRequest(BaseModel):
 
 class RefreshResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
 
 
@@ -36,7 +37,8 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=100)
     full_name: str = Field(min_length=1, max_length=100)
     tenant_name: str = Field(min_length=1, max_length=100)
-    tenant_slug: str = Field(min_length=1, max_length=50)
+    # Max 56 chars: 63 (PostgreSQL limit) - 7 (len("tenant_"))
+    tenant_slug: str = Field(min_length=1, max_length=56)
 
     @field_validator("password")
     @classmethod

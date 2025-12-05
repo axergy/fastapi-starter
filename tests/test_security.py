@@ -10,41 +10,95 @@ from src.app.schemas.auth import RegisterRequest
 class TestSchemaNameValidation:
     """Tests for schema name SQL injection prevention."""
 
-    def test_valid_schema_name(self):
-        """Valid schema names should pass validation."""
-        validate_schema_name("tenant_123")
-        validate_schema_name("acme")
-        validate_schema_name("a" * 50)  # Max length
+    def test_valid_schema_names(self):
+        """Valid tenant schema names should pass validation."""
+        validate_schema_name("tenant_acme")
+        validate_schema_name("tenant_a")
+        validate_schema_name("tenant_abc123")
+        validate_schema_name("tenant_acme_corp")
+        validate_schema_name("tenant_acme_corp_2024")
+        # Max length with tenant_ prefix (63 chars total)
+        validate_schema_name("tenant_" + "a" * 56)
 
-    def test_invalid_schema_name_uppercase(self):
-        """Uppercase letters should be rejected."""
-        with pytest.raises(ValueError, match="Invalid schema name"):
-            validate_schema_name("Tenant")
+    def test_missing_tenant_prefix(self):
+        """Schema names without tenant_ prefix should be rejected."""
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("acme")
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("myschema")
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant123")  # Missing underscore after tenant
 
-    def test_invalid_schema_name_starts_with_number(self):
-        """Schema names starting with numbers should be rejected."""
-        with pytest.raises(ValueError, match="Invalid schema name"):
-            validate_schema_name("123tenant")
+    def test_invalid_tenant_prefix_format(self):
+        """Schema names with tenant_ prefix but invalid format should be rejected."""
+        # Starts with number after prefix
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_123")
+        # Starts with underscore after prefix
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant__acme")
+
+    def test_consecutive_underscores(self):
+        """Consecutive underscores should be rejected."""
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_acme__corp")
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_a__b")
+
+    def test_trailing_underscore(self):
+        """Trailing underscores should be rejected."""
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_acme_")
+
+    def test_invalid_characters(self):
+        """Special characters and uppercase should be rejected."""
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_Acme")  # Uppercase
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_acme-corp")  # Hyphen
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_acme.corp")  # Period
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_acme corp")  # Space
+
+    def test_exceeds_max_length(self):
+        """Schema names over 63 characters should be rejected."""
+        # 64 characters total
+        long_name = "tenant_" + "a" * 57
+        with pytest.raises(ValueError, match="exceeds PostgreSQL limit"):
+            validate_schema_name(long_name)
 
     def test_sql_injection_semicolon(self):
         """SQL injection with semicolon should be rejected."""
-        with pytest.raises(ValueError, match="Invalid schema name"):
-            validate_schema_name("tenant; DROP TABLE users;--")
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_acme; DROP TABLE users;--")
 
     def test_sql_injection_comment(self):
         """SQL injection with comments should be rejected."""
-        with pytest.raises(ValueError, match="Invalid schema name"):
-            validate_schema_name("tenant--comment")
+        # The regex catches this before the forbidden pattern check
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_acme--comment")
+
+    def test_sql_injection_block_comment(self):
+        """SQL injection with block comments should be rejected."""
+        # The regex catches this before the forbidden pattern check
+        with pytest.raises(ValueError, match="Invalid schema name format"):
+            validate_schema_name("tenant_acme/*comment*/")
 
     def test_forbidden_pg_prefix(self):
-        """pg_ prefix should be rejected."""
+        """pg_ prefix should be rejected (even within tenant_ schema)."""
         with pytest.raises(ValueError, match="forbidden pattern"):
-            validate_schema_name("pg_catalog")
+            validate_schema_name("tenant_pg_catalog")
 
     def test_forbidden_public(self):
-        """public schema name should be rejected."""
+        """public keyword should be rejected."""
         with pytest.raises(ValueError, match="forbidden pattern"):
-            validate_schema_name("public")
+            validate_schema_name("tenant_public")
+
+    def test_forbidden_information_schema(self):
+        """information_schema keyword should be rejected."""
+        with pytest.raises(ValueError, match="forbidden pattern"):
+            validate_schema_name("tenant_information_schema")
 
 
 class TestPasswordValidation:

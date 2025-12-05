@@ -1,7 +1,9 @@
 """Repository for EmailVerificationToken entity."""
 
+from datetime import timedelta
 from uuid import UUID
 
+from sqlalchemy import and_, delete, or_
 from sqlmodel import select, update
 
 from src.app.models.base import utc_now
@@ -51,3 +53,29 @@ class EmailVerificationTokenRepository(BaseRepository[EmailVerificationToken]):
         self.session.add(token)
         await self.session.flush()
         return token
+
+    async def cleanup_expired(self, retention_days: int) -> int:
+        """Delete tokens expired more than retention_days ago.
+
+        Also deletes used tokens older than retention_days.
+        Idempotent: DELETE operations are inherently idempotent.
+
+        Args:
+            retention_days: Number of days to retain expired/used tokens
+
+        Returns:
+            Number of tokens deleted
+        """
+        cutoff = utc_now() - timedelta(days=retention_days)
+        stmt = delete(EmailVerificationToken).where(
+            or_(
+                EmailVerificationToken.expires_at < cutoff,  # type: ignore[arg-type]
+                and_(
+                    EmailVerificationToken.used == True,  # type: ignore[arg-type]  # noqa: E712
+                    EmailVerificationToken.created_at < cutoff,  # type: ignore[arg-type]
+                ),
+            )
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount or 0  # type: ignore[attr-defined]

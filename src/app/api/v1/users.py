@@ -1,6 +1,8 @@
 """User management endpoints."""
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from src.app.api.dependencies import (
     AuthenticatedUser,
@@ -8,6 +10,7 @@ from src.app.api.dependencies import (
     TenantServiceDep,
     UserServiceDep,
 )
+from src.app.schemas.pagination import PaginatedResponse
 from src.app.schemas.tenant import TenantRead
 from src.app.schemas.user import UserRead, UserUpdate
 
@@ -80,30 +83,34 @@ async def update_current_user(
 
 @router.get(
     "/me/tenants",
-    response_model=list[TenantRead],
+    response_model=PaginatedResponse[TenantRead],
     responses={
         200: {
-            "description": "List of tenants the user belongs to",
+            "description": "Paginated list of tenants the user belongs to",
             "content": {
                 "application/json": {
-                    "example": [
-                        {
-                            "id": "550e8400-e29b-41d4-a716-446655440000",
-                            "name": "Acme Corporation",
-                            "slug": "acme-corp",
-                            "status": "ready",
-                            "is_active": True,
-                            "created_at": "2024-01-15T10:30:00Z",
-                        },
-                        {
-                            "id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
-                            "name": "Beta Industries",
-                            "slug": "beta-industries",
-                            "status": "ready",
-                            "is_active": True,
-                            "created_at": "2024-02-20T14:45:00Z",
-                        },
-                    ]
+                    "example": {
+                        "items": [
+                            {
+                                "id": "550e8400-e29b-41d4-a716-446655440000",
+                                "name": "Acme Corporation",
+                                "slug": "acme-corp",
+                                "status": "ready",
+                                "is_active": True,
+                                "created_at": "2024-01-15T10:30:00Z",
+                            },
+                            {
+                                "id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
+                                "name": "Beta Industries",
+                                "slug": "beta-industries",
+                                "status": "ready",
+                                "is_active": True,
+                                "created_at": "2024-02-20T14:45:00Z",
+                            },
+                        ],
+                        "next_cursor": None,
+                        "has_more": False,
+                    }
                 }
             },
         }
@@ -112,11 +119,20 @@ async def update_current_user(
 async def list_my_tenants(
     current_user: AuthenticatedUser,
     tenant_service: TenantServiceDep,
-) -> list[TenantRead]:
+    cursor: Annotated[str | None, Query(description="Cursor for pagination")] = None,
+    limit: Annotated[int, Query(ge=1, le=100, description="Number of items per page")] = 50,
+) -> PaginatedResponse[TenantRead]:
     """List all tenants the current user belongs to.
 
     This endpoint does not require a tenant context (X-Tenant-ID header),
     making it useful for tenant selection screens after login.
+    Uses cursor-based pagination for efficient traversal.
     """
-    tenants = await tenant_service.list_user_tenants(current_user.id)
-    return [TenantRead.model_validate(t) for t in tenants]
+    tenants, next_cursor, has_more = await tenant_service.list_user_tenants_paginated(
+        current_user.id, cursor, limit
+    )
+    return PaginatedResponse(
+        items=[TenantRead.model_validate(t) for t in tenants],
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )

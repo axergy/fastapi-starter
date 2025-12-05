@@ -156,8 +156,78 @@ class TestTokenOperations:
     """Tests for token refresh and logout."""
 
     async def test_refresh_token(self, client: AsyncClient, test_user: dict) -> None:
-        """Test refreshing access token."""
+        """Test refreshing access token returns both new access and refresh tokens."""
         # Login first
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": test_user["email"],
+                "password": test_user["password"],
+            },
+        )
+        original_refresh_token = login_response.json()["refresh_token"]
+
+        # Refresh
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": original_refresh_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert "refresh_token" in data
+        assert data["token_type"] == "bearer"
+        # New refresh token should be different from the original
+        assert data["refresh_token"] != original_refresh_token
+
+    async def test_token_rotation_old_token_revoked(
+        self, client: AsyncClient, test_user: dict
+    ) -> None:
+        """Test that old refresh token is revoked after rotation."""
+        # Login
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": test_user["email"],
+                "password": test_user["password"],
+            },
+        )
+        old_refresh_token = login_response.json()["refresh_token"]
+
+        # First refresh - should succeed and return new tokens
+        first_refresh = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": old_refresh_token},
+        )
+        assert first_refresh.status_code == 200
+        new_refresh_token = first_refresh.json()["refresh_token"]
+
+        # Try to use old token again - should fail (token rotation)
+        second_refresh = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": old_refresh_token},
+        )
+        assert second_refresh.status_code == 401
+
+        # New token should still work
+        third_refresh = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": new_refresh_token},
+        )
+        assert third_refresh.status_code == 200
+
+    async def test_token_rotation_race_condition_prevention(
+        self, client: AsyncClient, test_user: dict
+    ) -> None:
+        """Test that parallel refresh requests with same token result in only one success.
+
+        This tests the TOCTOU race condition fix: only the first request should succeed,
+        all subsequent requests should fail because the token is atomically revoked.
+        """
+        import asyncio
+
+        # Login
         login_response = await client.post(
             "/api/v1/auth/login",
             json={
@@ -167,16 +237,37 @@ class TestTokenOperations:
         )
         refresh_token = login_response.json()["refresh_token"]
 
-        # Refresh
-        response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh_token},
+        # Make 5 parallel refresh requests with the same token
+        async def make_refresh_request():
+            return await client.post(
+                "/api/v1/auth/refresh",
+                json={"refresh_token": refresh_token},
+            )
+
+        responses = await asyncio.gather(
+            *[make_refresh_request() for _ in range(5)],
+            return_exceptions=False,
         )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
+        # Count successful and failed responses
+        success_count = sum(1 for r in responses if r.status_code == 200)
+        failure_count = sum(1 for r in responses if r.status_code == 401)
+
+        # Only ONE request should succeed due to atomic revocation
+        # The rest should fail because the token was revoked
+        assert success_count == 1, f"Expected 1 success, got {success_count}"
+        assert failure_count == 4, f"Expected 4 failures, got {failure_count}"
+
+        # Get the new token from the successful response
+        successful_response = next(r for r in responses if r.status_code == 200)
+        new_refresh_token = successful_response.json()["refresh_token"]
+
+        # Verify the new token works
+        final_refresh = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": new_refresh_token},
+        )
+        assert final_refresh.status_code == 200
 
     async def test_refresh_invalid_token(self, client: AsyncClient) -> None:
         """Test refresh with invalid token fails."""

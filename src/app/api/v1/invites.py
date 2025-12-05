@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from src.app.api.dependencies import (
@@ -12,6 +12,7 @@ from src.app.api.dependencies import (
     InviteServiceDep,
     InviteServicePublicDep,
 )
+from src.app.core.rate_limit import limiter
 from src.app.schemas.invite import (
     AcceptInviteExistingUser,
     AcceptInviteNewUser,
@@ -20,9 +21,9 @@ from src.app.schemas.invite import (
     InviteCreateRequest,
     InviteCreateResponse,
     InviteInfoResponse,
-    InviteListResponse,
     InviteRead,
 )
+from src.app.schemas.pagination import PaginatedResponse
 
 router = APIRouter(prefix="/invites", tags=["invites"])
 
@@ -85,16 +86,16 @@ async def create_invite(
 
 @router.get(
     "",
-    response_model=InviteListResponse,
+    response_model=PaginatedResponse[InviteRead],
     summary="List pending invites",
-    description="List all pending invites for the tenant. Admin role required.",
+    description="List all pending invites for the tenant with pagination. Admin role required.",
     responses={
         200: {
-            "description": "List of pending invites",
+            "description": "Paginated list of pending invites",
             "content": {
                 "application/json": {
                     "example": {
-                        "invites": [
+                        "items": [
                             {
                                 "id": "550e8400-e29b-41d4-a716-446655440000",
                                 "email": "user1@example.com",
@@ -112,7 +113,8 @@ async def create_invite(
                                 "created_at": "2024-01-16T14:45:00Z",
                             },
                         ],
-                        "total": 2,
+                        "next_cursor": "MjAyNC0wMS0xNlQxNDo0NTowMC4wMDAwMDA=",
+                        "has_more": False,
                     }
                 }
             },
@@ -124,14 +126,21 @@ async def create_invite(
 async def list_invites(
     admin_user: AdminUser,
     invite_service: InviteServiceDep,
-    limit: int = 100,
-    offset: int = 0,
-) -> InviteListResponse:
-    """List pending invites for the tenant."""
-    invites = await invite_service.list_pending_invites(limit=limit, offset=offset)
-    return InviteListResponse(
-        invites=[InviteRead.model_validate(inv) for inv in invites],
-        total=len(invites),
+    cursor: Annotated[str | None, Query(description="Cursor for pagination")] = None,
+    limit: Annotated[int, Query(ge=1, le=100, description="Number of items per page")] = 50,
+) -> PaginatedResponse[InviteRead]:
+    """List pending invites for the tenant.
+
+    Uses cursor-based pagination for efficient traversal of large result sets.
+    Pass the `next_cursor` from a response to get the next page.
+    """
+    invites, next_cursor, has_more = await invite_service.list_pending_invites_paginated(
+        cursor, limit
+    )
+    return PaginatedResponse(
+        items=[InviteRead.model_validate(inv) for inv in invites],
+        next_cursor=next_cursor,
+        has_more=has_more,
     )
 
 
@@ -287,7 +296,9 @@ async def resend_invite(
         404: {"description": "Invalid or expired invite"},
     },
 )
+@limiter.limit("10/minute")
 async def get_invite_info(
+    request: Request,
     token: str,
     invite_service: InviteServicePublicDep,
 ) -> InviteInfoResponse:
@@ -348,7 +359,9 @@ class AcceptInviteRequestBody(BaseModel):
         404: {"description": "Invalid or expired invite"},
     },
 )
+@limiter.limit("5/hour")
 async def accept_invite(
+    request: Request,
     token: str,
     invite_service: InviteServicePublicDep,
     session: DBSession,
@@ -366,7 +379,6 @@ async def accept_invite(
 
     from src.app.core.security import decode_token
     from src.app.models.public import User
-    from src.app.repositories import TenantRepository
     from src.app.services.auth_service import TokenType
 
     # Determine if this is an existing user (has valid auth) or new user
@@ -409,16 +421,13 @@ async def accept_invite(
             )
 
         try:
-            invite, accepted_user = await invite_service.accept_invite_existing_user(
+            invite, accepted_user, tenant = await invite_service.accept_invite_existing_user(
                 token=token,
                 user=user,
             )
-            # Get tenant slug
-            tenant_repo = TenantRepository(session)
-            tenant = await tenant_repo.get_by_id(invite.tenant_id)
             return AcceptInviteResponse(
                 message="Successfully joined tenant",
-                tenant_slug=tenant.slug if tenant else "",
+                tenant_slug=tenant.slug,
                 user_id=accepted_user.id,
                 is_new_user=False,
             )
@@ -442,18 +451,15 @@ async def accept_invite(
         )
 
     try:
-        invite, new_user = await invite_service.accept_invite_new_user(
+        invite, new_user, tenant = await invite_service.accept_invite_new_user(
             token=token,
             email=body.email,
             password=body.password,
             full_name=body.full_name,
         )
-        # Get tenant slug
-        tenant_repo = TenantRepository(session)
-        tenant = await tenant_repo.get_by_id(invite.tenant_id)
         return AcceptInviteResponse(
             message="Account created and joined tenant successfully",
-            tenant_slug=tenant.slug if tenant else "",
+            tenant_slug=tenant.slug,
             user_id=new_user.id,
             is_new_user=True,
         )

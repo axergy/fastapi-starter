@@ -3,6 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid7
 
+from sqlalchemy import Index
 from sqlmodel import Field, SQLModel
 
 from src.app.models.base import utc_now
@@ -13,7 +14,11 @@ class RefreshToken(SQLModel, table=True):
     """Refresh token storage - centralized in public schema."""
 
     __tablename__ = "refresh_tokens"
-    __table_args__ = {"schema": "public"}
+    __table_args__ = (
+        Index("ix_refresh_tokens_expires_at", "expires_at"),
+        Index("ix_refresh_tokens_tenant_expires", "tenant_id", "expires_at"),
+        {"schema": "public"},
+    )
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
     user_id: UUID = Field(foreign_key="public.users.id", index=True)

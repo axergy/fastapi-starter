@@ -109,11 +109,20 @@ class AuthService:
             await self.session.rollback()
             raise
 
-    async def refresh_access_token(self, refresh_token: str) -> str | None:
-        """Validate refresh token and return new access token.
+    async def refresh_access_token(self, refresh_token: str) -> tuple[str, str] | None:
+        """Validate refresh token and return new access and refresh tokens.
+
+        Implements token rotation to prevent replay attacks:
+        1. Validates the refresh token
+        2. Atomically revokes the old refresh token
+        3. Creates new refresh and access tokens
+        4. Blacklists the old token in Redis for fast rejection
 
         Uses Redis blacklist for fast rejection of revoked tokens.
         Falls back to database check if Redis unavailable.
+
+        Returns:
+            Tuple of (access_token, refresh_token) or None if validation fails
         """
         payload = decode_token(refresh_token)
         if payload is None:
@@ -151,7 +160,40 @@ class AuthService:
         if not hmac.compare_digest(token_hash, db_token.token_hash):
             return None
 
-        return create_access_token(user_id, self.tenant_id)
+        try:
+            # ATOMIC OPERATION: Revoke old token BEFORE issuing new ones
+            # This prevents TOCTOU race condition where multiple parallel requests
+            # could all validate successfully before any of them revoke
+            db_token.revoked = True
+
+            # Create new refresh token with rotation
+            new_refresh_token, new_expires_at = create_refresh_token(user_id, self.tenant_id)
+            new_token_hash = sha256(new_refresh_token.encode()).hexdigest()
+
+            # Store new refresh token in database
+            new_db_token = RefreshToken(
+                user_id=UUID(user_id),
+                tenant_id=self.tenant_id,
+                token_hash=new_token_hash,
+                expires_at=new_expires_at,
+            )
+            self.token_repo.add(new_db_token)
+
+            # Blacklist old token in Redis for fast rejection
+            settings = get_settings()
+            ttl = settings.refresh_token_expire_days * 86400  # days to seconds
+            await blacklist_token(token_hash, ttl)
+
+            # Commit transaction atomically
+            await self.session.commit()
+
+            # Create new access token
+            new_access_token = create_access_token(user_id, self.tenant_id)
+
+            return new_access_token, new_refresh_token
+        except Exception:
+            await self.session.rollback()
+            raise
 
     async def revoke_refresh_token(self, refresh_token: str) -> bool:
         """Revoke a refresh token. Returns True if successful.

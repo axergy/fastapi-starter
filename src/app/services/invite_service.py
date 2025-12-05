@@ -16,6 +16,7 @@ from src.app.models.base import utc_now
 from src.app.models.public import (
     InviteStatus,
     MembershipRole,
+    Tenant,
     TenantInvite,
     User,
 )
@@ -129,15 +130,16 @@ class InviteService:
 
     async def accept_invite_existing_user(
         self, token: str, user: User
-    ) -> tuple[TenantInvite, User]:
+    ) -> tuple[TenantInvite, User, "Tenant"]:
         """Accept invite for an existing, authenticated user.
 
         Validates:
         1. Token is valid and not expired
         2. Token email matches user email
         3. User doesn't already have membership
+        4. Tenant exists and is not deleted
 
-        Returns (invite, user).
+        Returns (invite, user, tenant).
         """
         try:
             token_hash = sha256(token.encode()).hexdigest()
@@ -157,6 +159,11 @@ class InviteService:
             if has_membership:
                 raise ValueError("You are already a member of this tenant")
 
+            # Get and validate tenant WITHIN transaction
+            tenant = await self.tenant_repo.get_by_id(invite.tenant_id)
+            if not tenant or tenant.deleted_at is not None:
+                raise ValueError("Tenant is no longer available")
+
             # Create membership
             self.membership_repo.create_membership(
                 user_id=user.id,
@@ -174,7 +181,7 @@ class InviteService:
                 invite_id=str(invite.id),
                 user_id=str(user.id),
             )
-            return invite, user
+            return invite, user, tenant
 
         except ValueError:
             await self.session.rollback()
@@ -190,15 +197,16 @@ class InviteService:
         email: str,
         password: str,
         full_name: str,
-    ) -> tuple[TenantInvite, User]:
+    ) -> tuple[TenantInvite, User, Tenant]:
         """Accept invite and create new user account.
 
         Validates:
         1. Token is valid and not expired
         2. Token email matches provided email
         3. Email not already registered
+        4. Tenant exists and is not deleted
 
-        Returns (invite, new_user).
+        Returns (invite, new_user, tenant).
 
         Note: New user is automatically email-verified since they
         received the invite email.
@@ -221,6 +229,11 @@ class InviteService:
                     "An account with this email already exists. "
                     "Please log in and accept the invite."
                 )
+
+            # Get and validate tenant WITHIN transaction
+            tenant = await self.tenant_repo.get_by_id(invite.tenant_id)
+            if not tenant or tenant.deleted_at is not None:
+                raise ValueError("Tenant is no longer available")
 
             # Create new user (email verified since they received invite)
             user = User(
@@ -251,7 +264,7 @@ class InviteService:
                 invite_id=str(invite.id),
                 user_id=str(user.id),
             )
-            return invite, user
+            return invite, user, tenant
 
         except ValueError:
             await self.session.rollback()
@@ -300,6 +313,23 @@ class InviteService:
             raise ValueError("Tenant context required for listing invites")
 
         return await self.invite_repo.get_pending_by_tenant(self.tenant_id, limit, offset)
+
+    async def list_pending_invites_paginated(
+        self, cursor: str | None, limit: int
+    ) -> tuple[list[TenantInvite], str | None, bool]:
+        """List pending invites for current tenant with cursor-based pagination.
+
+        Args:
+            cursor: Optional cursor for pagination
+            limit: Maximum number of results
+
+        Returns:
+            Tuple of (items, next_cursor, has_more)
+        """
+        if self.tenant_id is None:
+            raise ValueError("Tenant context required for listing invites")
+
+        return await self.invite_repo.get_pending_by_tenant_paginated(self.tenant_id, cursor, limit)
 
     async def cancel_invite(self, invite_id: UUID) -> TenantInvite:
         """Cancel a pending invite."""

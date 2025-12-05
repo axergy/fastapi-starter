@@ -2,8 +2,10 @@
 
 import logging
 import sys
+from uuid import UUID
 
 import structlog
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -62,3 +64,34 @@ def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
         A bound structlog logger.
     """
     return structlog.get_logger(name)
+
+
+def bind_request_context(request_id: str | None) -> None:
+    """Bind request-level context to all subsequent log calls.
+
+    Args:
+        request_id: The correlation ID for the current request.
+    """
+    if request_id:
+        bind_contextvars(request_id=request_id)
+
+
+def bind_user_context(user_id: UUID, tenant_id: UUID, email: str | None = None) -> None:
+    """Bind user-level context to all subsequent log calls.
+
+    Args:
+        user_id: The authenticated user's ID.
+        tenant_id: The tenant ID from the request context.
+        email: Optional user email for additional context.
+    """
+    bind_contextvars(
+        user_id=str(user_id),
+        tenant_id=str(tenant_id),
+    )
+    if email:
+        bind_contextvars(user_email=email)
+
+
+def clear_request_context() -> None:
+    """Clear all request-scoped context."""
+    clear_contextvars()

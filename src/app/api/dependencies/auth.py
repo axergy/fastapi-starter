@@ -8,6 +8,7 @@ from sqlmodel import select
 
 from src.app.api.dependencies.db import DBSession
 from src.app.api.dependencies.tenant import ValidatedTenant
+from src.app.core.logging import bind_user_context
 from src.app.core.security import decode_token
 from src.app.models import MembershipRole, User, UserTenantMembership
 from src.app.services.auth_service import TokenType
@@ -118,6 +119,9 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User does not have access to this tenant",
         )
+
+    # Bind user and tenant context to logs
+    bind_user_context(user.id, tenant.id, user.email)
 
     return user
 

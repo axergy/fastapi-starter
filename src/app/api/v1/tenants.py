@@ -1,9 +1,12 @@
 """Tenant management endpoints."""
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, status
 
 from src.app.api.dependencies import AuthenticatedUser, TenantServiceDep
 from src.app.models.public import TenantStatus
+from src.app.schemas.pagination import PaginatedResponse
 from src.app.schemas.tenant import (
     TenantCreate,
     TenantProvisioningResponse,
@@ -121,26 +124,30 @@ async def get_tenant_status(slug: str, service: TenantServiceDep) -> TenantStatu
 
 @router.get(
     "",
-    response_model=list[TenantRead],
+    response_model=PaginatedResponse[TenantRead],
     responses={
         200: {
-            "description": "List of tenants",
+            "description": "Paginated list of tenants",
             "content": {
                 "application/json": {
-                    "example": [
-                        {
-                            "id": "550e8400-e29b-41d4-a716-446655440000",
-                            "name": "Acme Corporation",
-                            "slug": "acme-corp",
-                            "status": "ready",
-                        },
-                        {
-                            "id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
-                            "name": "Beta Industries",
-                            "slug": "beta-industries",
-                            "status": "ready",
-                        },
-                    ]
+                    "example": {
+                        "items": [
+                            {
+                                "id": "550e8400-e29b-41d4-a716-446655440000",
+                                "name": "Acme Corporation",
+                                "slug": "acme-corp",
+                                "status": "ready",
+                            },
+                            {
+                                "id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
+                                "name": "Beta Industries",
+                                "slug": "beta-industries",
+                                "status": "ready",
+                            },
+                        ],
+                        "next_cursor": "MjAyNC0wMS0yMFQxNDo0NTowMC4wMDAwMDA=",
+                        "has_more": True,
+                    }
                 }
             },
         }
@@ -149,11 +156,23 @@ async def get_tenant_status(slug: str, service: TenantServiceDep) -> TenantStatu
 async def list_tenants(
     current_user: AuthenticatedUser,
     service: TenantServiceDep,
-) -> list[TenantRead]:
-    """List tenants where current user has membership."""
+    cursor: Annotated[str | None, Query(description="Cursor for pagination")] = None,
+    limit: Annotated[int, Query(ge=1, le=100, description="Number of items per page")] = 50,
+) -> PaginatedResponse[TenantRead]:
+    """List tenants where current user has membership.
+
+    Uses cursor-based pagination for efficient traversal of large result sets.
+    Pass the `next_cursor` from a response to get the next page.
+    """
     # Get only tenants the user has access to
-    tenants = await service.list_user_tenants(current_user.id)
-    return [TenantRead.model_validate(t) for t in tenants]
+    tenants, next_cursor, has_more = await service.list_user_tenants_paginated(
+        current_user.id, cursor, limit
+    )
+    return PaginatedResponse(
+        items=[TenantRead.model_validate(t) for t in tenants],
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
 
 
 @router.get(

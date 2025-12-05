@@ -1,7 +1,9 @@
 """Repository for RefreshToken entity."""
 
+from datetime import timedelta
 from uuid import UUID
 
+from sqlalchemy import and_, delete, or_, update
 from sqlmodel import select
 
 from src.app.models.base import utc_now
@@ -66,8 +68,6 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
 
         Returns the number of tokens revoked.
         """
-        from sqlalchemy import update
-
         stmt = (
             update(RefreshToken)
             .where(RefreshToken.user_id == user_id)  # type: ignore[arg-type]
@@ -76,4 +76,30 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
             .values(revoked=True)
         )
         result = await self.session.execute(stmt)
+        return result.rowcount or 0  # type: ignore[attr-defined]
+
+    async def cleanup_expired(self, retention_days: int) -> int:
+        """Delete tokens expired more than retention_days ago.
+
+        Also deletes revoked tokens older than retention_days.
+        Idempotent: DELETE operations are inherently idempotent.
+
+        Args:
+            retention_days: Number of days to retain expired/revoked tokens
+
+        Returns:
+            Number of tokens deleted
+        """
+        cutoff = utc_now() - timedelta(days=retention_days)
+        stmt = delete(RefreshToken).where(
+            or_(
+                RefreshToken.expires_at < cutoff,  # type: ignore[arg-type]
+                and_(
+                    RefreshToken.revoked == True,  # type: ignore[arg-type]  # noqa: E712
+                    RefreshToken.created_at < cutoff,  # type: ignore[arg-type]
+                ),
+            )
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
         return result.rowcount or 0  # type: ignore[attr-defined]

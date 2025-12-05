@@ -1,7 +1,9 @@
 """Repository for TenantInvite entity."""
 
+from datetime import timedelta
 from uuid import UUID
 
+from sqlalchemy import and_, delete, or_
 from sqlmodel import select, update
 
 from src.app.models.base import utc_now
@@ -52,6 +54,25 @@ class TenantInviteRepository(BaseRepository[TenantInvite]):
         )
         return list(result.scalars().all())
 
+    async def get_pending_by_tenant_paginated(
+        self, tenant_id: UUID, cursor: str | None, limit: int
+    ) -> tuple[list[TenantInvite], str | None, bool]:
+        """List pending invites for a tenant with cursor-based pagination.
+
+        Args:
+            tenant_id: Tenant ID to filter by
+            cursor: Optional cursor for pagination
+            limit: Maximum number of results
+
+        Returns:
+            Tuple of (items, next_cursor, has_more)
+        """
+        query = select(TenantInvite).where(
+            TenantInvite.tenant_id == tenant_id,
+            TenantInvite.status == InviteStatus.PENDING.value,
+        )
+        return await self.paginate(query, cursor, limit, TenantInvite.created_at)
+
     async def mark_accepted(self, invite: TenantInvite, user_id: UUID) -> TenantInvite:
         """Mark an invite as accepted."""
         invite.status = InviteStatus.ACCEPTED.value
@@ -77,3 +98,31 @@ class TenantInviteRepository(BaseRepository[TenantInvite]):
             .where(TenantInvite.status == InviteStatus.PENDING.value)  # type: ignore[arg-type]
             .values(status=InviteStatus.CANCELLED.value)
         )
+
+    async def cleanup_expired(self, retention_days: int) -> int:
+        """Delete invites expired more than retention_days ago.
+
+        Also deletes cancelled or accepted invites older than retention_days.
+        Idempotent: DELETE operations are inherently idempotent.
+
+        Args:
+            retention_days: Number of days to retain expired/cancelled/accepted invites
+
+        Returns:
+            Number of invites deleted
+        """
+        cutoff = utc_now() - timedelta(days=retention_days)
+        stmt = delete(TenantInvite).where(
+            or_(
+                TenantInvite.expires_at < cutoff,  # type: ignore[arg-type]
+                and_(
+                    TenantInvite.status.in_(  # type: ignore[union-attr, attr-defined]
+                        [InviteStatus.CANCELLED.value, InviteStatus.ACCEPTED.value]
+                    ),
+                    TenantInvite.created_at < cutoff,  # type: ignore[arg-type]
+                ),
+            )
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount or 0  # type: ignore[attr-defined]

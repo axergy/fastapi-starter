@@ -1,11 +1,11 @@
-import asyncio
 import secrets
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from asgi_correlation_id import CorrelationIdMiddleware
-from fastapi import Depends, FastAPI, HTTPException, status
+from asgi_correlation_id import CorrelationIdMiddleware, correlation_id
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
@@ -13,17 +13,30 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import RequestResponseEndpoint
 
 from src.app.api.v1.router import api_router
 from src.app.core.config import get_settings
 from src.app.core.db import dispose_engine, get_public_session
-from src.app.core.logging import get_logger, setup_logging
+from src.app.core.logging import (
+    bind_request_context,
+    clear_request_context,
+    get_logger,
+    setup_logging,
+)
 from src.app.core.rate_limit import limiter
 from src.app.core.redis import close_redis, get_redis
 from src.app.core.security import SecurityHeadersMiddleware
+from src.app.core.shutdown import request_tracker
 from src.app.temporal.client import close_temporal_client, get_temporal_client
 
 logger = get_logger(__name__)
+
+# Health check caching
+_health_cache: dict[str, Any] | None = None
+_health_cache_time: float = 0
+HEALTH_CACHE_TTL = 10  # seconds
 
 
 @asynccontextmanager
@@ -35,12 +48,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     yield
 
-    # Graceful shutdown with drain period
+    # Graceful shutdown with proper request draining
     grace_period = settings.shutdown_grace_period
-    logger.info(f"Shutdown initiated, draining requests for {grace_period}s...")
+    logger.info(
+        f"Shutdown initiated, waiting for {request_tracker.in_flight_count} in-flight requests..."
+    )
 
-    # Allow in-flight requests to complete
-    await asyncio.sleep(grace_period)
+    # Start shutdown mode to prevent new requests from being tracked
+    await request_tracker.start_shutdown()
+
+    # Wait for all in-flight requests to complete
+    drained = await request_tracker.wait_for_drain(timeout=grace_period)
+    if not drained:
+        logger.warning(
+            f"Shutdown timeout after {grace_period}s - "
+            f"{request_tracker.in_flight_count} requests may not have completed"
+        )
 
     logger.info("Closing connections...")
     await close_redis()
@@ -69,6 +92,46 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Exception handlers to include request_id in error responses
+    @app.exception_handler(StarletteHTTPException)
+    async def starlette_http_exception_handler(
+        request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "detail": exc.detail,
+                "request_id": correlation_id.get(),
+            },
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "detail": exc.detail,
+                "request_id": correlation_id.get(),
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        request_id = correlation_id.get()
+        logger.exception(
+            "Unhandled exception",
+            request_id=request_id,
+            path=request.url.path,
+            exc_info=exc,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Internal server error",
+                "request_id": request_id,
+            },
+        )
+
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
@@ -86,6 +149,33 @@ def create_app() -> FastAPI:
 
     # Add security headers middleware
     app.add_middleware(SecurityHeadersMiddleware)
+
+    # Add logging context middleware
+    @app.middleware("http")
+    async def logging_context_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        """Bind request_id to log context for all requests."""
+        clear_request_context()
+        bind_request_context(correlation_id.get())
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            clear_request_context()
+
+    # Add request tracking middleware for graceful shutdown
+    @app.middleware("http")
+    async def track_requests_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        """Track in-flight requests for graceful shutdown."""
+        # Don't track health checks or metrics
+        if request.url.path in ["/health", "/metrics"]:
+            return await call_next(request)
+
+        async with request_tracker.track_request():
+            return await call_next(request)
 
     app.include_router(api_router)
 
@@ -113,12 +203,38 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> JSONResponse:
-        """Health check with dependency validation."""
+        """Health check with dependency validation and caching."""
+        global _health_cache, _health_cache_time
+
+        now = time.time()
+
+        # If shutting down, always return draining status
+        if request_tracker.is_shutting_down:
+            return JSONResponse(
+                content={
+                    "status": "draining",
+                    "in_flight_requests": request_tracker.in_flight_count,
+                    "message": "Server is shutting down",
+                },
+                status_code=503,
+            )
+
+        # Return cached result if still valid
+        if _health_cache and (now - _health_cache_time) < HEALTH_CACHE_TTL:
+            cached_response = _health_cache.copy()
+            cached_response["cached"] = True
+            cached_response["cache_age_seconds"] = round(now - _health_cache_time, 1)
+            status_code = 200 if cached_response["status"] == "healthy" else 503
+            return JSONResponse(content=cached_response, status_code=status_code)
+
+        # Perform actual health checks
         health_status: dict[str, Any] = {
             "status": "healthy",
             "database": "unknown",
             "temporal": "unknown",
             "redis": "not_configured",
+            "cached": False,
+            "timestamp": now,
         }
 
         # Check database
@@ -153,6 +269,10 @@ def create_app() -> FastAPI:
                 # Redis being down is "degraded", not fully unhealthy
                 if health_status["status"] == "healthy":
                     health_status["status"] = "degraded"
+
+        # Cache the result
+        _health_cache = health_status
+        _health_cache_time = now
 
         status_code = 200 if health_status["status"] == "healthy" else 503
         return JSONResponse(content=health_status, status_code=status_code)
