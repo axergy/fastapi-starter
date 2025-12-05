@@ -1,5 +1,8 @@
 """Tests for admin endpoints (superuser only)."""
 
+from unittest.mock import AsyncMock, patch
+from uuid import uuid7
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -176,3 +179,378 @@ class TestUserReadSchema:
         data = response.json()
         assert "is_superuser" in data
         assert data["is_superuser"] is True
+
+
+class TestDeleteTenant:
+    """Tests for DELETE /api/v1/admin/tenants/{tenant_id} endpoint."""
+
+    async def test_delete_tenant_as_superuser(
+        self, engine: AsyncEngine, test_superuser: dict, test_tenant: str
+    ) -> None:
+        """Test superuser can delete a tenant."""
+        # Get tenant_id from DB
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT id FROM public.tenants WHERE slug = :slug"),
+                {"slug": test_tenant},
+            )
+            tenant_id = str(result.scalar_one())
+
+        # Create access token for superuser
+        access_token = create_access_token(
+            subject=test_superuser["id"],
+            tenant_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        await db.dispose_engine()
+        app = create_app()
+
+        # Mock Temporal client
+        with patch("src.app.services.admin_service.get_temporal_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.start_workflow.return_value = AsyncMock()
+            mock_get_client.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                response = await client.delete(
+                    f"/api/v1/admin/tenants/{tenant_id}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+        assert response.status_code == 200, f"Got {response.status_code}: {response.json()}"
+        data = response.json()
+        assert data["status"] == "deletion_started"
+        assert "workflow_id" in data
+        assert tenant_id in data["workflow_id"]
+
+        # Verify workflow was started
+        mock_client.start_workflow.assert_called_once()
+
+    async def test_delete_tenant_not_found(
+        self, engine: AsyncEngine, test_superuser: dict, test_tenant: str
+    ) -> None:
+        """Test 404 when tenant doesn't exist."""
+        access_token = create_access_token(
+            subject=test_superuser["id"],
+            tenant_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        non_existent_id = str(uuid7())
+
+        await db.dispose_engine()
+        app = create_app()
+
+        with patch("src.app.services.admin_service.get_temporal_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_get_client.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                response = await client.delete(
+                    f"/api/v1/admin/tenants/{non_existent_id}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+
+        # Verify workflow was NOT started
+        mock_client.start_workflow.assert_not_called()
+
+    async def test_delete_tenant_already_deleted(
+        self, engine: AsyncEngine, test_superuser: dict, test_tenant: str
+    ) -> None:
+        """Test 404 when tenant already soft-deleted."""
+        # Get tenant_id and mark as deleted
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT id FROM public.tenants WHERE slug = :slug"),
+                {"slug": test_tenant},
+            )
+            tenant_id = str(result.scalar_one())
+
+            # Soft-delete the tenant
+            await conn.execute(
+                text("UPDATE public.tenants SET deleted_at = now() WHERE slug = :slug"),
+                {"slug": test_tenant},
+            )
+            await conn.commit()
+
+        access_token = create_access_token(
+            subject=test_superuser["id"],
+            tenant_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        await db.dispose_engine()
+        app = create_app()
+
+        with patch("src.app.services.admin_service.get_temporal_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_get_client.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                response = await client.delete(
+                    f"/api/v1/admin/tenants/{tenant_id}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+        assert response.status_code == 404
+        assert "already deleted" in response.json()["detail"].lower()
+
+        # Verify workflow was NOT started
+        mock_client.start_workflow.assert_not_called()
+
+    async def test_delete_tenant_as_regular_user_forbidden(
+        self, client: AsyncClient, test_user: dict
+    ) -> None:
+        """Test regular user cannot delete tenants."""
+        # Login as regular user
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": test_user["email"],
+                "password": test_user["password"],
+            },
+        )
+        access_token = login_response.json()["access_token"]
+
+        fake_tenant_id = str(uuid7())
+
+        response = await client.delete(
+            f"/api/v1/admin/tenants/{fake_tenant_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 403
+        assert "Superuser privileges required" in response.json()["detail"]
+
+    async def test_delete_tenant_no_auth_unauthorized(
+        self, engine: AsyncEngine, test_tenant: str
+    ) -> None:
+        """Test unauthenticated request returns 401."""
+        # Get tenant_id from DB
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT id FROM public.tenants WHERE slug = :slug"),
+                {"slug": test_tenant},
+            )
+            tenant_id = str(result.scalar_one())
+
+        await db.dispose_engine()
+        app = create_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.delete(f"/api/v1/admin/tenants/{tenant_id}")
+
+        assert response.status_code == 401
+
+
+class TestBulkDeleteTenants:
+    """Tests for DELETE /api/v1/admin/tenants endpoint."""
+
+    async def test_bulk_delete_by_status(
+        self, engine: AsyncEngine, test_superuser: dict, test_tenant: str
+    ) -> None:
+        """Test bulk delete with status filter."""
+        # Create 2 failed tenants in DB
+        failed_slugs = []
+        async with engine.connect() as conn:
+            for i in range(2):
+                slug = f"failed_{uuid7().hex[-8:]}"
+                failed_slugs.append(slug)
+                await conn.execute(
+                    text("""
+                        INSERT INTO tenants (id, name, slug, status, is_active, created_at)
+                        VALUES (gen_random_uuid(), :name, :slug, 'failed', false, now())
+                    """),
+                    {"name": f"Failed Co {i}", "slug": slug},
+                )
+            await conn.commit()
+
+        access_token = create_access_token(
+            subject=test_superuser["id"],
+            tenant_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        await db.dispose_engine()
+        app = create_app()
+
+        with patch("src.app.services.admin_service.get_temporal_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.start_workflow.return_value = AsyncMock()
+            mock_get_client.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                response = await client.delete(
+                    "/api/v1/admin/tenants?status=failed",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+        assert response.status_code == 200, f"Got {response.status_code}: {response.json()}"
+        data = response.json()
+        assert data["status"] == "deletion_started"
+        assert data["count"] == 2
+        assert len(data["workflow_ids"]) == 2
+
+        # Verify workflow was started for each tenant
+        assert mock_client.start_workflow.call_count == 2
+
+    async def test_bulk_delete_empty_result(
+        self, engine: AsyncEngine, test_superuser: dict, test_tenant: str
+    ) -> None:
+        """Test bulk delete returns empty when no matching tenants."""
+        access_token = create_access_token(
+            subject=test_superuser["id"],
+            tenant_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        await db.dispose_engine()
+        app = create_app()
+
+        with patch("src.app.services.admin_service.get_temporal_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_get_client.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                # Use a status that doesn't exist
+                response = await client.delete(
+                    "/api/v1/admin/tenants?status=nonexistent_status",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "deletion_started"
+        assert data["count"] == 0
+        assert data["workflow_ids"] == []
+
+        # Verify no workflows were started
+        mock_client.start_workflow.assert_not_called()
+
+    async def test_bulk_delete_as_regular_user_forbidden(
+        self, client: AsyncClient, test_user: dict
+    ) -> None:
+        """Test regular user cannot bulk delete."""
+        # Login as regular user
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": test_user["email"],
+                "password": test_user["password"],
+            },
+        )
+        access_token = login_response.json()["access_token"]
+
+        response = await client.delete(
+            "/api/v1/admin/tenants",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 403
+        assert "Superuser privileges required" in response.json()["detail"]
+
+    async def test_bulk_delete_no_auth_unauthorized(
+        self, engine: AsyncEngine, test_tenant: str
+    ) -> None:
+        """Test unauthenticated bulk delete returns 401."""
+        await db.dispose_engine()
+        app = create_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.delete("/api/v1/admin/tenants")
+
+        assert response.status_code == 401
+
+
+class TestTenantRepositoryDeletion:
+    """Tests for TenantRepository.list_for_deletion method."""
+
+    async def test_list_for_deletion_excludes_deleted(
+        self, engine: AsyncEngine, test_tenant: str
+    ) -> None:
+        """Test list_for_deletion excludes soft-deleted tenants."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from src.app.repositories import TenantRepository
+
+        # Mark test_tenant as deleted
+        async with engine.connect() as conn:
+            await conn.execute(
+                text("UPDATE public.tenants SET deleted_at = now() WHERE slug = :slug"),
+                {"slug": test_tenant},
+            )
+            await conn.commit()
+
+        # Create repository and test
+        async with AsyncSession(engine) as session:
+            repo = TenantRepository(session)
+            tenants = await repo.list_for_deletion()
+
+        # Assert test_tenant is NOT in results (since it's deleted)
+        tenant_slugs = [t.slug for t in tenants]
+        assert test_tenant not in tenant_slugs
+
+    async def test_list_for_deletion_with_status_filter(
+        self, engine: AsyncEngine, test_tenant: str
+    ) -> None:
+        """Test list_for_deletion filters by status."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from src.app.repositories import TenantRepository
+
+        # Create a failed tenant
+        failed_slug = f"failed_{uuid7().hex[-8:]}"
+        async with engine.connect() as conn:
+            await conn.execute(
+                text("""
+                    INSERT INTO tenants (id, name, slug, status, is_active, created_at)
+                    VALUES (gen_random_uuid(), 'Failed Co', :slug, 'failed', false, now())
+                """),
+                {"slug": failed_slug},
+            )
+            await conn.commit()
+
+        # Test with status filter
+        async with AsyncSession(engine) as session:
+            repo = TenantRepository(session)
+            tenants = await repo.list_for_deletion(status_filter="failed")
+
+        tenant_slugs = [t.slug for t in tenants]
+        # Only failed tenant should be returned
+        assert failed_slug in tenant_slugs
+        # test_tenant is 'ready', so should NOT be returned
+        assert test_tenant not in tenant_slugs
+
+    async def test_list_for_deletion_no_filter(self, engine: AsyncEngine, test_tenant: str) -> None:
+        """Test list_for_deletion without filter returns all non-deleted."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from src.app.repositories import TenantRepository
+
+        async with AsyncSession(engine) as session:
+            repo = TenantRepository(session)
+            tenants = await repo.list_for_deletion()
+
+        tenant_slugs = [t.slug for t in tenants]
+        # test_tenant should be in results (not deleted)
+        assert test_tenant in tenant_slugs

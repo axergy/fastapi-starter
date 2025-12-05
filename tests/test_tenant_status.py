@@ -1,5 +1,7 @@
 """Tests for TenantStatus enum validation and usage."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from src.app.models.public import Tenant, TenantStatus
@@ -123,3 +125,21 @@ class TestTenantStatusTransitions:
         # Once ready, tenant should remain operational
         assert tenant.status_enum == TenantStatus.READY
         assert tenant.is_active is True
+
+    def test_tenant_is_deleted_property_false(self):
+        """Test is_deleted returns False when deleted_at is None."""
+        tenant = Tenant(name="Test Tenant", slug="test_tenant")
+        assert tenant.deleted_at is None
+        assert tenant.is_deleted is False
+
+    def test_tenant_is_deleted_property_true(self):
+        """Test is_deleted returns True when deleted_at is set."""
+        tenant = Tenant(name="Test Tenant", slug="test_tenant")
+        tenant.deleted_at = datetime.now(UTC)
+        assert tenant.deleted_at is not None
+        assert tenant.is_deleted is True
+
+    def test_tenant_deleted_at_default_none(self):
+        """Test that deleted_at defaults to None for new tenants."""
+        tenant = Tenant(name="Fresh Tenant", slug="fresh_tenant")
+        assert tenant.deleted_at is None
