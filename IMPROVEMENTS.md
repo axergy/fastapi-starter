@@ -99,7 +99,8 @@ Validated code review findings for the FastAPI SaaS Starter project.
 - Added `AuthService.revoke_all_tokens_for_user(user_id)` - tenant-scoped service method
 **Files:** `src/app/repositories/public/token.py`, `src/app/services/auth_service.py`
 
-### 12. ~~Soft-Delete + Cleanup for Failed Tenants~~ ✅ DONE
+### 12. ~~Soft-Delete + Cleanup for Failed Tenants~~ ✅ RESOLVED
+**Risk:** Low
 **Current:** ~~Failed tenants remain in DB with `status=failed`, schemas may be orphaned~~ Now supports tenant deletion
 **Benefit:** Clean state, ability to cleanup resources
 **Implementation:**
@@ -109,7 +110,8 @@ Validated code review findings for the FastAPI SaaS Starter project.
 - Added `AdminService` with delete_tenant, bulk_delete_tenants methods
 **Files:** `src/app/models/public/tenant.py`, `src/app/temporal/workflows.py`, `src/app/services/admin_service.py`, `src/app/api/v1/admin.py`
 
-### 13. ~~Compensation Logic in Workflows~~ ✅ DONE
+### 13. ~~Compensation Logic in Workflows~~ ✅ RESOLVED
+**Risk:** Medium
 **Current:** ~~On failure, only marks tenant as "failed" - no undo~~ Now cleans up on failure
 **Benefit:** Clean rollback of partial resources (Saga pattern)
 **Implementation:**
@@ -118,7 +120,8 @@ Validated code review findings for the FastAPI SaaS Starter project.
 - If migrations completed, drop_tenant_schema is called before marking failed
 **File:** `src/app/temporal/workflows.py` (TenantProvisioningWorkflow._run_compensations)
 
-### 14. ~~Add drop_tenant_schema Activity~~ ✅ DONE
+### 14. ~~Add drop_tenant_schema Activity~~ ✅ RESOLVED
+**Risk:** Low
 **Current:** ~~No programmatic way to drop tenant schemas~~ Now supports schema deletion
 **Benefit:** Enable cleanup workflows, tenant deletion
 **Implementation:**
