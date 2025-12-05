@@ -85,11 +85,11 @@ Validated code review findings for the FastAPI SaaS Starter project.
 
 ## Minor / Polish
 
-### 10. Extract get_current_user Logic
-**Current:** ~90 lines with 10+ validation steps in single function
-**Benefit:** Better testability, separation of concerns
-**Implementation:** Extract token validation, UUID parsing, membership check into service
-**File:** `src/app/api/dependencies.py:183-272`
+### 10. ~~Extract get_current_user Logic~~ ✅ DONE
+**Current:** ~~~90 lines with 10+ validation steps in single function~~ DRY refactored
+**Benefit:** Eliminated ~36 lines of duplication between auth functions
+**Implementation:** Extracted common token validation into `_validate_access_token()` helper
+**File:** `src/app/api/dependencies/auth.py`
 
 ### 11. Add revoke_all_tokens_for_user Function
 **Current:** Only single-token revocation exists

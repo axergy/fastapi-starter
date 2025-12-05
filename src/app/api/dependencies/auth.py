@@ -1,6 +1,6 @@
 """Authentication and authorization dependencies."""
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
@@ -13,14 +13,14 @@ from src.app.models import MembershipRole, User, UserTenantMembership
 from src.app.services.auth_service import TokenType
 
 
-async def get_current_user(
+async def _validate_access_token(
+    authorization: str | None,
     session: DBSession,
-    tenant: ValidatedTenant,
-    authorization: Annotated[str | None, Header()] = None,
-) -> User:
-    """Validate access token and return current user.
+) -> tuple[dict[str, Any], User]:
+    """Validate access token and return (payload, user).
 
-    IMPORTANT: Validates that JWT tenant_id matches the X-Tenant-ID header's tenant.
+    Common validation logic shared by get_current_user and get_authenticated_user.
+    Validates: header format, token decode, token type, user_id, user exists + active.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -44,15 +44,51 @@ async def get_current_user(
         )
 
     user_id = payload.get("sub")
-    token_tenant_id = payload.get("tenant_id")
-
-    if not user_id or not token_tenant_id:
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
 
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user_id in token",
+        ) from e
+
+    result = await session.execute(select(User).where(User.id == user_uuid))
+    user = result.scalar_one_or_none()
+
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    return payload, user
+
+
+async def get_current_user(
+    session: DBSession,
+    tenant: ValidatedTenant,
+    authorization: Annotated[str | None, Header()] = None,
+) -> User:
+    """Validate access token and return current user.
+
+    IMPORTANT: Validates that JWT tenant_id matches the X-Tenant-ID header's tenant.
+    """
+    payload, user = await _validate_access_token(authorization, session)
+
     # CRITICAL: Validate JWT tenant_id matches X-Tenant-ID header's tenant
+    token_tenant_id = payload.get("tenant_id")
+    if not token_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+
     try:
         token_tenant_uuid = UUID(token_tenant_id)
     except ValueError as e:
@@ -65,25 +101,6 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Token tenant does not match request tenant",
-        )
-
-    # Validate user_id format
-    try:
-        user_uuid = UUID(user_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user_id in token",
-        ) from e
-
-    # Get user from public schema
-    result = await session.execute(select(User).where(User.id == user_uuid))
-    user = result.scalar_one_or_none()
-
-    if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
         )
 
     # Verify user has active membership in this tenant
@@ -117,54 +134,7 @@ async def get_authenticated_user(
     Used for tenant-agnostic endpoints like listing user's tenants.
     Does NOT validate tenant membership - just validates the token and user exists.
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
-        )
-
-    token = authorization[7:]
-    payload = decode_token(token)
-
-    if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-
-    if payload.get("type") != TokenType.ACCESS:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type",
-        )
-
-    user_id = payload.get("sub")
-
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
-        )
-
-    # Validate user_id format
-    try:
-        user_uuid = UUID(user_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user_id in token",
-        ) from e
-
-    # Get user from public schema
-    result = await session.execute(select(User).where(User.id == user_uuid))
-    user = result.scalar_one_or_none()
-
-    if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
-        )
-
+    _, user = await _validate_access_token(authorization, session)
     return user
 
 
