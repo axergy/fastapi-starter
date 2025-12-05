@@ -1,5 +1,5 @@
 ---
-status: ready
+status: resolved
 priority: p3
 issue_id: "012"
 tags: [observability, error-handling, developer-experience]

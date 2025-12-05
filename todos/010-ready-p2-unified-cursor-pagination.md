@@ -1,5 +1,5 @@
 ---
-status: ready
+status: resolved
 priority: p2
 issue_id: "010"
 tags: [performance, api-design, pagination, developer-experience]

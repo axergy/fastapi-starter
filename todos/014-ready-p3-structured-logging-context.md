@@ -1,5 +1,5 @@
 ---
-status: ready
+status: resolved
 priority: p3
 issue_id: "014"
 tags: [observability, logging, structured-logging, debugging]

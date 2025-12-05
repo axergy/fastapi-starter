@@ -1,5 +1,5 @@
 ---
-status: ready
+status: resolved
 priority: p2
 issue_id: "007"
 tags: [security, rate-limiting, dos-prevention]

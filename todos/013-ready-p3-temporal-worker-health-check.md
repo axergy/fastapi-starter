@@ -1,5 +1,5 @@
 ---
-status: ready
+status: resolved
 priority: p3
 issue_id: "013"
 tags: [observability, temporal, kubernetes, health-check]
