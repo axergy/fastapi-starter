@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.app.core.config import Settings
+from src.app.core.rate_limit import global_rate_limit_middleware
 
 from .logging_context import logging_context_middleware
 from .request_tracking import request_tracking_middleware
@@ -15,6 +16,7 @@ __all__ = [
     "SecurityHeadersMiddleware",
     "logging_context_middleware",
     "request_tracking_middleware",
+    "global_rate_limit_middleware",
 ]
 
 
@@ -48,3 +50,9 @@ def setup_middlewares(app: FastAPI, settings: Settings) -> None:
     @app.middleware("http")
     async def _request_tracking(request, call_next):  # type: ignore[no-untyped-def]
         return await request_tracking_middleware(request, call_next)
+
+    # Global rate limiting - applies BEFORE tenant validation (DoS protection)
+    # This is the innermost middleware, runs first on request
+    @app.middleware("http")
+    async def _global_rate_limit(request, call_next):  # type: ignore[no-untyped-def]
+        return await global_rate_limit_middleware(request, call_next)
