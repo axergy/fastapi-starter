@@ -46,21 +46,34 @@ class BaseRepository[ModelType: SQLModel]:
             query: The base SQLAlchemy query to paginate
             cursor: Optional cursor from previous page (base64-encoded)
             limit: Maximum number of items to return
-            cursor_field: The field to use for cursor (typically created_at or id)
+            cursor_field: The field to use for cursor (e.g., created_at, id)
+                         Supports datetime, UUID, and other scalar types.
 
         Returns:
             Tuple of (items, next_cursor, has_more)
             - items: List of results for this page
             - next_cursor: Base64-encoded cursor for next page, or None
             - has_more: Whether there are more results after this page
+
+        Note:
+            Cursor values are stringified before encoding:
+            - datetime → isoformat()
+            - UUID and other scalars → str()
         """
         # If cursor is provided, decode it and add to query
         if cursor:
             try:
-                cursor_value = decode_cursor(cursor)
-                # Parse cursor value as ISO datetime
-                cursor_dt = datetime.fromisoformat(cursor_value)
-                query = query.where(cursor_field < cursor_dt)
+                cursor_str = decode_cursor(cursor)
+                # Try to parse as datetime first, then UUID, then use as string
+                cursor_value: datetime | UUID | str
+                try:
+                    cursor_value = datetime.fromisoformat(cursor_str)
+                except ValueError:
+                    try:
+                        cursor_value = UUID(cursor_str)
+                    except ValueError:
+                        cursor_value = cursor_str
+                query = query.where(cursor_field < cursor_value)
             except (ValueError, TypeError):
                 # Invalid cursor - ignore and start from beginning
                 pass
@@ -83,8 +96,12 @@ class BaseRepository[ModelType: SQLModel]:
         next_cursor = None
         if has_more and items:
             last_item = items[-1]
-            cursor_value = getattr(last_item, cursor_field.key)
-            if isinstance(cursor_value, datetime):
-                next_cursor = encode_cursor(cursor_value.isoformat())
+            value = getattr(last_item, cursor_field.key)
+            # Convert to stable string representation
+            if isinstance(value, datetime):
+                next_cursor = encode_cursor(value.isoformat())
+            elif value is not None:
+                # UUID and other scalars: stringify
+                next_cursor = encode_cursor(str(value))
 
         return items, next_cursor, has_more
