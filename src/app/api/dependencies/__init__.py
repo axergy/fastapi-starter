@@ -23,6 +23,7 @@ from src.app.api.dependencies.db import (
 
 # Repositories
 from src.app.api.dependencies.repositories import (
+    AuditLogRepo,
     EmailVerificationRepo,
     InviteRepo,
     MembershipRepo,
@@ -30,6 +31,7 @@ from src.app.api.dependencies.repositories import (
     TokenRepo,
     UserRepo,
     WorkflowExecRepo,
+    get_audit_log_repository,
     get_email_verification_repository,
     get_invite_repository,
     get_membership_repository,
@@ -42,6 +44,7 @@ from src.app.api.dependencies.repositories import (
 # Services
 from src.app.api.dependencies.services import (
     AdminServiceDep,
+    AuditServiceDep,
     AuthServiceDep,
     EmailVerificationServiceDep,
     InviteServiceDep,
@@ -50,6 +53,7 @@ from src.app.api.dependencies.services import (
     TenantServiceDep,
     UserServiceDep,
     get_admin_service,
+    get_audit_service,
     get_auth_service,
     get_email_verification_service,
     get_invite_service,
@@ -85,6 +89,7 @@ __all__ = [
     "require_admin_role",
     "require_superuser",
     # Repositories
+    "AuditLogRepo",
     "EmailVerificationRepo",
     "InviteRepo",
     "MembershipRepo",
@@ -92,6 +97,7 @@ __all__ = [
     "TokenRepo",
     "UserRepo",
     "WorkflowExecRepo",
+    "get_audit_log_repository",
     "get_email_verification_repository",
     "get_invite_repository",
     "get_membership_repository",
@@ -101,6 +107,7 @@ __all__ = [
     "get_workflow_execution_repository",
     # Services
     "AdminServiceDep",
+    "AuditServiceDep",
     "AuthServiceDep",
     "EmailVerificationServiceDep",
     "InviteServiceDep",
@@ -109,6 +116,7 @@ __all__ = [
     "TenantServiceDep",
     "UserServiceDep",
     "get_admin_service",
+    "get_audit_service",
     "get_auth_service",
     "get_email_verification_service",
     "get_invite_service",

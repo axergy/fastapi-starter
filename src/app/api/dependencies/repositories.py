@@ -6,6 +6,7 @@ from fastapi import Depends
 
 from src.app.api.dependencies.db import DBSession
 from src.app.repositories import (
+    AuditLogRepository,
     EmailVerificationTokenRepository,
     MembershipRepository,
     RefreshTokenRepository,
@@ -55,6 +56,11 @@ def get_invite_repository(session: DBSession) -> TenantInviteRepository:
     return TenantInviteRepository(session)
 
 
+def get_audit_log_repository(session: DBSession) -> AuditLogRepository:
+    """Get audit log repository with public schema session."""
+    return AuditLogRepository(session)
+
+
 UserRepo = Annotated[UserRepository, Depends(get_user_repository)]
 TokenRepo = Annotated[RefreshTokenRepository, Depends(get_token_repository)]
 MembershipRepo = Annotated[MembershipRepository, Depends(get_membership_repository)]
@@ -66,3 +72,4 @@ EmailVerificationRepo = Annotated[
     EmailVerificationTokenRepository, Depends(get_email_verification_repository)
 ]
 InviteRepo = Annotated[TenantInviteRepository, Depends(get_invite_repository)]
+AuditLogRepo = Annotated[AuditLogRepository, Depends(get_audit_log_repository)]

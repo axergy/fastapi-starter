@@ -4,11 +4,13 @@ from fastapi import APIRouter, HTTPException, status
 from starlette.requests import Request
 
 from src.app.api.dependencies import (
+    AuditServiceDep,
     AuthServiceDep,
     EmailVerificationServiceDep,
     RegistrationServiceDep,
 )
 from src.app.core.rate_limit import limiter
+from src.app.models.public import AuditAction
 from src.app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -48,7 +50,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 )
 @limiter.limit("5/minute")
 async def login(
-    request: Request, login_data: LoginRequest, service: AuthServiceDep
+    request: Request,
+    login_data: LoginRequest,
+    service: AuthServiceDep,
+    audit_service: AuditServiceDep,
 ) -> LoginResponse:
     """Authenticate user and return tokens.
 
@@ -59,6 +64,11 @@ async def login(
         result = await service.authenticate(login_data.email, login_data.password)
     except ValueError as e:
         if str(e) == "Email not verified":
+            await audit_service.log_failure(
+                action=AuditAction.USER_LOGIN,
+                entity_type="user",
+                error_message="Email not verified",
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Email not verified. Please check your email for verification link.",
@@ -66,10 +76,21 @@ async def login(
         raise
 
     if result is None:
+        await audit_service.log_failure(
+            action=AuditAction.USER_LOGIN,
+            entity_type="user",
+            error_message="Invalid credentials or no access to tenant",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials or no access to tenant",
         )
+
+    # Log successful login (user_id is in the JWT, but we don't have it here easily)
+    await audit_service.log_success(
+        action=AuditAction.USER_LOGIN,
+        entity_type="user",
+    )
 
     return result
 
@@ -94,7 +115,10 @@ async def login(
 )
 @limiter.limit("10/minute")
 async def refresh(
-    request: Request, refresh_data: RefreshRequest, service: AuthServiceDep
+    request: Request,
+    refresh_data: RefreshRequest,
+    service: AuthServiceDep,
+    audit_service: AuditServiceDep,
 ) -> RefreshResponse:
     """Refresh access token using refresh token.
 
@@ -104,10 +128,20 @@ async def refresh(
     result = await service.refresh_access_token(refresh_data.refresh_token)
 
     if result is None:
+        await audit_service.log_failure(
+            action=AuditAction.TOKEN_REFRESH,
+            entity_type="token",
+            error_message="Invalid or expired refresh token",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
+
+    await audit_service.log_success(
+        action=AuditAction.TOKEN_REFRESH,
+        entity_type="token",
+    )
 
     access_token, refresh_token = result
     return RefreshResponse(access_token=access_token, refresh_token=refresh_token)
@@ -173,9 +207,18 @@ async def register(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("5/minute")
-async def logout(request: Request, logout_data: RefreshRequest, service: AuthServiceDep) -> None:
+async def logout(
+    request: Request,
+    logout_data: RefreshRequest,
+    service: AuthServiceDep,
+    audit_service: AuditServiceDep,
+) -> None:
     """Revoke refresh token (logout)."""
     await service.revoke_refresh_token(logout_data.refresh_token)
+    await audit_service.log_success(
+        action=AuditAction.USER_LOGOUT,
+        entity_type="token",
+    )
 
 
 @router.post(

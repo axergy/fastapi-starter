@@ -6,6 +6,7 @@ from fastapi import Depends
 
 from src.app.api.dependencies.db import DBSession
 from src.app.api.dependencies.repositories import (
+    AuditLogRepo,
     EmailVerificationRepo,
     InviteRepo,
     MembershipRepo,
@@ -16,6 +17,7 @@ from src.app.api.dependencies.repositories import (
 )
 from src.app.api.dependencies.tenant import ValidatedTenant
 from src.app.services.admin_service import AdminService
+from src.app.services.audit_service import AuditService
 from src.app.services.auth_service import AuthService
 from src.app.services.email_verification_service import EmailVerificationService
 from src.app.services.invite_service import InviteService
@@ -107,6 +109,15 @@ def get_admin_service(
     return AdminService(tenant_repo, session)
 
 
+def get_audit_service(
+    audit_repo: AuditLogRepo,
+    session: DBSession,
+    tenant: ValidatedTenant,
+) -> AuditService:
+    """Get audit service with tenant context."""
+    return AuditService(audit_repo, session, tenant.id)
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 TenantServiceDep = Annotated[TenantService, Depends(get_tenant_service)]
@@ -117,3 +128,4 @@ EmailVerificationServiceDep = Annotated[
 InviteServiceDep = Annotated[InviteService, Depends(get_invite_service)]
 InviteServicePublicDep = Annotated[InviteService, Depends(get_invite_service_public)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
+AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]

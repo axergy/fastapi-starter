@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.app.core.config import Settings
 from src.app.core.rate_limit import global_rate_limit_middleware
 
+from .audit_context import audit_context_middleware
 from .logging_context import logging_context_middleware
 from .request_tracking import request_tracking_middleware
 from .security_headers import SecurityHeadersMiddleware
@@ -14,6 +15,7 @@ from .security_headers import SecurityHeadersMiddleware
 __all__ = [
     "setup_middlewares",
     "SecurityHeadersMiddleware",
+    "audit_context_middleware",
     "logging_context_middleware",
     "request_tracking_middleware",
     "global_rate_limit_middleware",
@@ -45,6 +47,11 @@ def setup_middlewares(app: FastAPI, settings: Settings) -> None:
     @app.middleware("http")
     async def _logging_context(request, call_next):  # type: ignore[no-untyped-def]
         return await logging_context_middleware(request, call_next)
+
+    # Audit context - captures IP, user agent for audit logging
+    @app.middleware("http")
+    async def _audit_context(request, call_next):  # type: ignore[no-untyped-def]
+        return await audit_context_middleware(request, call_next)
 
     # Request tracking - for graceful shutdown
     @app.middleware("http")
