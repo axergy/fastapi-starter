@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.app.core.validators import validate_schema_name
+from src.app.core.security import validate_schema_name
 from src.app.schemas.auth import RegisterRequest
 
 

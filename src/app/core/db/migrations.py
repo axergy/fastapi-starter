@@ -14,7 +14,7 @@ def _get_alembic_config() -> Config:
         return Config("alembic.ini")
 
     # Fallback to project root (when running from src/app/...)
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = Path(__file__).parent.parent.parent.parent.parent
     config_path = project_root / "alembic.ini"
     return Config(str(config_path))
 

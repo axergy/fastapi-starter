@@ -1,3 +1,5 @@
+"""Security validators."""
+
 import re
 
 

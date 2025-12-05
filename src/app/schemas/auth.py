@@ -76,3 +76,30 @@ class RegisterResponse(BaseModel):
     user: UserRead
     workflow_id: str
     tenant_slug: str
+    message: str = "Please check your email to verify your account"
+
+
+class VerifyEmailRequest(BaseModel):
+    """Request to verify email with token."""
+
+    token: str = Field(min_length=32, max_length=128)
+
+
+class VerifyEmailResponse(BaseModel):
+    """Response after email verification."""
+
+    message: str
+    verified: bool
+    user: UserRead | None = None
+
+
+class ResendVerificationRequest(BaseModel):
+    """Request to resend verification email."""
+
+    email: EmailStr
+
+
+class ResendVerificationResponse(BaseModel):
+    """Response after resending verification email."""
+
+    message: str

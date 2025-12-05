@@ -6,7 +6,7 @@ from sqlmodel import SQLModel
 
 from alembic import context
 from src.app.core.config import get_settings
-from src.app.core.validators import validate_schema_name
+from src.app.core.security import validate_schema_name
 
 # Import all models for metadata
 from src.app.models import RefreshToken, Tenant, User  # noqa: F401

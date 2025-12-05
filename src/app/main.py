@@ -1,12 +1,14 @@
 import asyncio
+import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
 from asgi_correlation_id import CorrelationIdMiddleware
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -17,7 +19,7 @@ from src.app.core.config import get_settings
 from src.app.core.db import dispose_engine, get_public_session
 from src.app.core.logging import get_logger, setup_logging
 from src.app.core.rate_limit import limiter
-from src.app.core.security_headers import SecurityHeadersMiddleware
+from src.app.core.security import SecurityHeadersMiddleware
 from src.app.temporal.client import close_temporal_client, get_temporal_client
 
 logger = get_logger(__name__)
@@ -74,7 +76,26 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
 
     # Prometheus metrics instrumentation
-    Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+    instrumentator = Instrumentator().instrument(app)
+
+    # Protect /metrics endpoint if API key is configured
+    if settings.metrics_api_key:
+        api_key_header = APIKeyHeader(name="X-Metrics-Key", auto_error=False)
+
+        async def verify_metrics_key(api_key: str | None = Depends(api_key_header)) -> None:
+            if (
+                api_key is None
+                or settings.metrics_api_key is None
+                or not secrets.compare_digest(api_key, settings.metrics_api_key)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or missing metrics API key",
+                )
+
+        instrumentator.expose(app, endpoint="/metrics", dependencies=[Depends(verify_metrics_key)])
+    else:
+        instrumentator.expose(app, endpoint="/metrics")
 
     @app.get("/health")
     async def health() -> JSONResponse:

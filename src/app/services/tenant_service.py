@@ -8,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.core.config import get_settings
 from src.app.models.base import utc_now
 from src.app.models.public import Tenant, TenantStatus, WorkflowExecution
-from src.app.repositories.tenant_repository import TenantRepository
-from src.app.repositories.workflow_execution_repository import WorkflowExecutionRepository
+from src.app.repositories import TenantRepository, WorkflowExecutionRepository
 from src.app.temporal.client import get_temporal_client
 from src.app.temporal.workflows import TenantProvisioningWorkflow
 

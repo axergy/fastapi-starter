@@ -7,19 +7,29 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.core.config import get_settings
+from src.app.core.logging import get_logger
 from src.app.core.security import hash_password
 from src.app.models.public import Tenant, TenantStatus, User
-from src.app.repositories.user_repository import UserRepository
+from src.app.repositories import UserRepository
+from src.app.services.email_verification_service import EmailVerificationService
 from src.app.temporal.client import get_temporal_client
 from src.app.temporal.workflows import TenantProvisioningWorkflow
+
+logger = get_logger(__name__)
 
 
 class RegistrationService:
     """Service for user registration with tenant creation."""
 
-    def __init__(self, user_repo: UserRepository, session: AsyncSession):
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        session: AsyncSession,
+        email_verification_service: EmailVerificationService | None = None,
+    ):
         self.user_repo = user_repo
         self.session = session
+        self.email_verification_service = email_verification_service
 
     async def register(
         self,
@@ -82,4 +92,17 @@ class RegistrationService:
             raise ValueError(f"Failed to start tenant provisioning: {e}") from e
 
         await self.session.refresh(user)
+
+        # Send verification email if service is available
+        if self.email_verification_service:
+            try:
+                await self.email_verification_service.create_and_send_verification(user)
+            except Exception as e:
+                # Log error but don't fail registration - user can resend verification
+                logger.error(
+                    "Failed to send verification email during registration",
+                    user_id=str(user.id),
+                    error=str(e),
+                )
+
         return user, workflow_id

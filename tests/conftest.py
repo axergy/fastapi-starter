@@ -13,7 +13,7 @@ from sqlalchemy.pool import NullPool
 
 from src.app.core import db
 from src.app.core.config import get_settings
-from src.app.core.migrations import run_migrations_sync
+from src.app.core.db import run_migrations_sync
 from src.app.core.security import hash_password
 from src.app.main import create_app
 
@@ -69,7 +69,16 @@ async def test_tenant(engine: AsyncEngine) -> AsyncGenerator[str, None]:
     # Cleanup
     async with engine.connect() as conn:
         await conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
-        # Clean up membership, tokens, then users, then tenant
+        # Clean up invites, membership, tokens, then users, then tenant
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.tenant_invites
+                WHERE tenant_id = (SELECT id FROM public.tenants WHERE slug = :slug)
+                """
+            ),
+            {"slug": tenant_slug},
+        )
         await conn.execute(
             text(
                 """
@@ -104,14 +113,15 @@ async def test_user(engine: AsyncEngine, test_tenant: str) -> AsyncGenerator[dic
     hashed = hash_password(password)
 
     async with engine.connect() as conn:
-        # Create user in public.users
+        # Create user in public.users (with email_verified=true for testing)
         await conn.execute(
             text(
                 """
                 INSERT INTO public.users
                 (id, email, hashed_password, full_name, is_active, is_superuser,
-                 created_at, updated_at)
-                VALUES (:id, :email, :hashed_password, :full_name, true, false, now(), now())
+                 email_verified, email_verified_at, created_at, updated_at)
+                VALUES (:id, :email, :hashed_password, :full_name, true, false,
+                 true, now(), now(), now())
                 """
             ),
             {
@@ -184,6 +194,17 @@ async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, N
 
     # Pre-test cleanup - only clean non-test data (registration creates slugs without test_ prefix)
     async with engine.connect() as conn:
+        # Delete invites for non-test tenants
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.tenant_invites
+                WHERE tenant_id IN (
+                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
+                )
+                """
+            )
+        )
         # Delete memberships for non-test tenants
         await conn.execute(
             text(
@@ -202,6 +223,17 @@ async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, N
                 DELETE FROM public.refresh_tokens
                 WHERE tenant_id IN (
                     SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
+                )
+                """
+            )
+        )
+        # Delete email verification tokens for users not in test tenants
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.email_verification_tokens
+                WHERE user_id NOT IN (
+                    SELECT user_id FROM public.user_tenant_membership
                 )
                 """
             )
@@ -235,6 +267,16 @@ async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, N
         await conn.execute(
             text(
                 """
+                DELETE FROM public.tenant_invites
+                WHERE tenant_id IN (
+                    SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
                 DELETE FROM public.user_tenant_membership
                 WHERE tenant_id IN (
                     SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
@@ -248,6 +290,16 @@ async def client_no_tenant(engine: AsyncEngine) -> AsyncGenerator[AsyncClient, N
                 DELETE FROM public.refresh_tokens
                 WHERE tenant_id IN (
                     SELECT id FROM public.tenants WHERE slug NOT LIKE 'test_%'
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.email_verification_tokens
+                WHERE user_id NOT IN (
+                    SELECT user_id FROM public.user_tenant_membership
                 )
                 """
             )

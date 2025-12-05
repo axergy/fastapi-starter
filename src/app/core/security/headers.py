@@ -12,7 +12,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: ASGIApp,
-        content_security_policy: str | None = "default-src 'self'",
+        content_security_policy: str | None = "default-src 'self'; frame-ancestors 'none'",
         x_content_type_options: str = "nosniff",
         x_frame_options: str = "DENY",
         x_xss_protection: str = "1; mode=block",

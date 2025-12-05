@@ -1,17 +1,26 @@
-"""Repository layer - data access abstraction."""
+"""Repository layer - data access abstraction.
+
+Re-exports all repositories for backward compatibility.
+"""
 
 from src.app.repositories.base import BaseRepository
-from src.app.repositories.membership_repository import MembershipRepository
-from src.app.repositories.tenant_repository import TenantRepository
-from src.app.repositories.token_repository import RefreshTokenRepository
-from src.app.repositories.user_repository import UserRepository
-from src.app.repositories.workflow_execution_repository import WorkflowExecutionRepository
+from src.app.repositories.public import (
+    EmailVerificationTokenRepository,
+    MembershipRepository,
+    RefreshTokenRepository,
+    TenantInviteRepository,
+    TenantRepository,
+    UserRepository,
+    WorkflowExecutionRepository,
+)
 
 __all__ = [
     "BaseRepository",
-    "UserRepository",
-    "RefreshTokenRepository",
-    "TenantRepository",
+    "EmailVerificationTokenRepository",
     "MembershipRepository",
+    "RefreshTokenRepository",
+    "TenantInviteRepository",
+    "TenantRepository",
+    "UserRepository",
     "WorkflowExecutionRepository",
 ]

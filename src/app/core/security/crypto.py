@@ -1,3 +1,5 @@
+"""Cryptographic utilities - password hashing and JWT tokens."""
+
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -56,7 +58,7 @@ def create_access_token(
         "exp": expire,
         "type": "access",
     }
-    return jwt.encode(
+    return jwt.encode(  # type: ignore[no-any-return]
         to_encode,
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
@@ -77,7 +79,7 @@ def create_refresh_token(
         "exp": expire,
         "type": "refresh",
     }
-    token = jwt.encode(
+    token: str = jwt.encode(  # type: ignore[assignment]
         to_encode,
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
@@ -90,11 +92,10 @@ def decode_token(token: str) -> dict[str, Any] | None:
     """Decode and validate JWT token. Returns None on any error."""
     settings = get_settings()
     try:
-        payload = jwt.decode(
+        return jwt.decode(  # type: ignore[no-any-return]
             token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
         )
-        return payload
     except JWTError:
         return None

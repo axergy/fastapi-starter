@@ -13,9 +13,11 @@ from src.app.core.security import (
     verify_password,
 )
 from src.app.models.public import RefreshToken
-from src.app.repositories.membership_repository import MembershipRepository
-from src.app.repositories.token_repository import RefreshTokenRepository
-from src.app.repositories.user_repository import UserRepository
+from src.app.repositories import (
+    MembershipRepository,
+    RefreshTokenRepository,
+    UserRepository,
+)
 from src.app.schemas.auth import LoginResponse
 
 
@@ -54,9 +56,11 @@ class AuthService:
         1. User exists in public.users
         2. Password is correct
         3. User is active
-        4. User has active membership in the tenant
+        4. Email is verified
+        5. User has active membership in the tenant
 
         Returns None if authentication fails.
+        Raises ValueError if email is not verified (to provide specific error).
         """
         try:
             # 1. Get user from public schema
@@ -72,7 +76,11 @@ class AuthService:
             if not user.is_active:
                 return None
 
-            # 4. Verify membership in tenant
+            # 4. Check email is verified
+            if not user.email_verified:
+                raise ValueError("Email not verified")
+
+            # 5. Verify membership in tenant
             if not await self.membership_repo.user_has_active_membership(user.id, self.tenant_id):
                 return None
 

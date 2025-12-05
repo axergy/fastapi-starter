@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 from temporalio import activity
 
 from src.app.core.config import get_settings
-from src.app.core.migrations import run_migrations_sync
+from src.app.core.db import run_migrations_sync
 from src.app.models.base import utc_now
 from src.app.models.public import MembershipRole, Tenant, TenantStatus, UserTenantMembership
 

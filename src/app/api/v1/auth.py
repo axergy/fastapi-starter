@@ -3,7 +3,11 @@
 from fastapi import APIRouter, HTTPException, status
 from starlette.requests import Request
 
-from src.app.api.dependencies import AuthServiceDep, RegistrationServiceDep
+from src.app.api.dependencies import (
+    AuthServiceDep,
+    EmailVerificationServiceDep,
+    RegistrationServiceDep,
+)
 from src.app.core.rate_limit import limiter
 from src.app.schemas.auth import (
     LoginRequest,
@@ -12,6 +16,10 @@ from src.app.schemas.auth import (
     RefreshResponse,
     RegisterRequest,
     RegisterResponse,
+    ResendVerificationRequest,
+    ResendVerificationResponse,
+    VerifyEmailRequest,
+    VerifyEmailResponse,
 )
 from src.app.schemas.user import UserRead
 
@@ -35,7 +43,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
             },
         },
         401: {"description": "Invalid credentials"},
-        403: {"description": "User not member of tenant"},
+        403: {"description": "Email not verified or user not member of tenant"},
     },
 )
 @limiter.limit("5/minute")
@@ -45,8 +53,17 @@ async def login(
     """Authenticate user and return tokens.
 
     Requires X-Tenant-ID header. User must have membership in the tenant.
+    User must have verified their email address.
     """
-    result = await service.authenticate(login_data.email, login_data.password)
+    try:
+        result = await service.authenticate(login_data.email, login_data.password)
+    except ValueError as e:
+        if str(e) == "Email not verified":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email not verified. Please check your email for verification link.",
+            ) from e
+        raise
 
     if result is None:
         raise HTTPException(
@@ -151,3 +168,85 @@ async def register(
 async def logout(request: Request, logout_data: RefreshRequest, service: AuthServiceDep) -> None:
     """Revoke refresh token (logout)."""
     await service.revoke_refresh_token(logout_data.refresh_token)
+
+
+@router.post(
+    "/verify-email",
+    response_model=VerifyEmailResponse,
+    responses={
+        200: {
+            "description": "Email verified successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Email verified successfully",
+                        "verified": True,
+                        "user": {
+                            "id": "550e8400-e29b-41d4-a716-446655440000",
+                            "email": "user@example.com",
+                            "full_name": "John Doe",
+                        },
+                    }
+                }
+            },
+        },
+        400: {"description": "Invalid or expired token"},
+    },
+)
+async def verify_email(
+    request: Request,
+    verify_data: VerifyEmailRequest,
+    service: EmailVerificationServiceDep,
+) -> VerifyEmailResponse:
+    """Verify email address using token from verification email.
+
+    Does NOT require X-Tenant-ID header or authentication.
+    """
+    user = await service.verify_token(verify_data.token)
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token",
+        )
+
+    return VerifyEmailResponse(
+        message="Email verified successfully",
+        verified=True,
+        user=UserRead.model_validate(user),
+    )
+
+
+@router.post(
+    "/resend-verification",
+    response_model=ResendVerificationResponse,
+    responses={
+        200: {
+            "description": "Verification email sent (same response if user not found)",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "If an account exists, a verification link has been sent"
+                    }
+                }
+            },
+        },
+    },
+)
+@limiter.limit("3/hour")
+async def resend_verification(
+    request: Request,
+    resend_data: ResendVerificationRequest,
+    service: EmailVerificationServiceDep,
+) -> ResendVerificationResponse:
+    """Resend verification email.
+
+    Does NOT require X-Tenant-ID header or authentication.
+    Rate limited to 3 per hour to prevent abuse.
+    Always returns success to prevent email enumeration.
+    """
+    await service.resend_verification(resend_data.email)
+
+    return ResendVerificationResponse(
+        message="If an account exists with this email, a verification link has been sent"
+    )

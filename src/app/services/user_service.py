@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.core.security import hash_password
 from src.app.models.public import User
-from src.app.repositories.user_repository import UserRepository
+from src.app.repositories import UserRepository
 from src.app.schemas.user import UserUpdate
 
 

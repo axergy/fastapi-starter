@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # Metrics
+    metrics_api_key: str | None = None  # If set, /metrics requires this key
+
+    # Email (Resend)
+    resend_api_key: str | None = None  # If not set, emails are logged but not sent
+    email_from: str = "noreply@example.com"
+    email_verification_expire_hours: int = 24
+    app_url: str = "http://localhost:3000"  # Frontend URL for verification links
+
+    # Invites
+    invite_expire_days: int = 7
+
 
 @lru_cache
 def get_settings() -> Settings:
