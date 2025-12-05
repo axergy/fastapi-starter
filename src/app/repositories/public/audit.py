@@ -1,11 +1,9 @@
 """Repository for AuditLog entity."""
 
 from datetime import timedelta
-from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import delete
-from sqlalchemy.engine import CursorResult
 from sqlmodel import select
 
 from src.app.models.base import utc_now
@@ -103,4 +101,4 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         stmt = delete(AuditLog).where(AuditLog.created_at < cutoff)  # type: ignore[arg-type]
         result = await self.session.execute(stmt)
         await self.session.commit()
-        return cast(CursorResult[Any], result).rowcount or 0
+        return result.rowcount or 0  # type: ignore[attr-defined]
