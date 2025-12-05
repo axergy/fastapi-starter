@@ -2,7 +2,6 @@
 
 import secrets
 from datetime import timedelta
-from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
@@ -11,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.core.config import get_settings
 from src.app.core.logging import get_logger
 from src.app.core.notifications import send_invite_email
-from src.app.core.security import hash_password
+from src.app.core.security import hash_password, hash_token
 from src.app.models.base import utc_now
 from src.app.models.public import (
     InviteStatus,
@@ -82,7 +81,7 @@ class InviteService:
 
             # Generate cryptographically secure token
             token = secrets.token_urlsafe(32)
-            token_hash = sha256(token.encode()).hexdigest()
+            token_hash = hash_token(token)
 
             # Calculate expiry
             expires_at = utc_now() + timedelta(days=settings.invite_expire_days)
@@ -128,79 +127,7 @@ class InviteService:
             logger.error("Failed to create invite", error=str(e))
             raise
 
-    async def accept_invite_existing_user(
-        self, token: str, user: User
-    ) -> tuple[TenantInvite, User, "Tenant"]:
-        """Accept invite for an existing, authenticated user.
-
-        Validates:
-        1. Token is valid and not expired
-        2. Token email matches user email
-        3. User doesn't already have membership
-        4. Tenant exists and is not deleted
-
-        Returns (invite, user, tenant).
-        """
-        try:
-            token_hash = sha256(token.encode()).hexdigest()
-            invite = await self.invite_repo.get_valid_by_hash(token_hash)
-
-            if invite is None:
-                raise ValueError("Invalid or expired invite token")
-
-            # Token must match user's email
-            if invite.email.lower() != user.email.lower():
-                raise ValueError("Invite was sent to a different email address")
-
-            # Check not already a member
-            has_membership = await self.membership_repo.user_has_active_membership(
-                user.id, invite.tenant_id
-            )
-            if has_membership:
-                raise ValueError("You are already a member of this tenant")
-
-            # Get and validate tenant WITHIN transaction
-            tenant = await self.tenant_repo.get_by_id(invite.tenant_id)
-            if not tenant or tenant.deleted_at is not None:
-                raise ValueError("Tenant is no longer available")
-
-            # Create membership
-            self.membership_repo.create_membership(
-                user_id=user.id,
-                tenant_id=invite.tenant_id,
-                role=invite.role,
-            )
-
-            # Mark invite as accepted
-            await self.invite_repo.mark_accepted(invite, user.id)
-
-            # Capture IDs before commit (to avoid lazy loading issues after commit)
-            invite_id = str(invite.id)
-            user_id = str(user.id)
-
-            await self.session.commit()
-
-            # Refresh objects to ensure they're usable after commit
-            await self.session.refresh(invite)
-            await self.session.refresh(user)
-            await self.session.refresh(tenant)
-
-            logger.info(
-                "Invite accepted by existing user",
-                invite_id=invite_id,
-                user_id=user_id,
-            )
-            return invite, user, tenant
-
-        except ValueError:
-            await self.session.rollback()
-            raise
-        except Exception as e:
-            await self.session.rollback()
-            logger.error("Failed to accept invite", error=str(e))
-            raise
-
-    async def accept_invite_new_user(
+    async def accept_invite(
         self,
         token: str,
         email: str,
@@ -209,19 +136,22 @@ class InviteService:
     ) -> tuple[TenantInvite, User, Tenant]:
         """Accept invite and create new user account.
 
+        Users can only belong to ONE tenant, so invites are only valid
+        for users who don't have an account yet.
+
         Validates:
         1. Token is valid and not expired
         2. Token email matches provided email
         3. Email not already registered
         4. Tenant exists and is not deleted
 
-        Returns (invite, new_user, tenant).
+        Returns (invite, user, tenant).
 
         Note: New user is automatically email-verified since they
         received the invite email.
         """
         try:
-            token_hash = sha256(token.encode()).hexdigest()
+            token_hash = hash_token(token)
             invite = await self.invite_repo.get_valid_by_hash(token_hash)
 
             if invite is None:
@@ -231,13 +161,10 @@ class InviteService:
             if invite.email.lower() != email.lower():
                 raise ValueError("Email does not match invite")
 
-            # Check email not already registered
+            # Check email not already registered (users can only belong to one tenant)
             existing_user = await self.user_repo.get_by_email(email)
             if existing_user:
-                raise ValueError(
-                    "An account with this email already exists. "
-                    "Please log in and accept the invite."
-                )
+                raise ValueError("Email already registered. Please login to your existing tenant.")
 
             # Get and validate tenant WITHIN transaction
             tenant = await self.tenant_repo.get_by_id(invite.tenant_id)
@@ -255,41 +182,54 @@ class InviteService:
             self.user_repo.add(user)
             await self.session.flush()  # Get user.id
 
-            # Create membership
-            self.membership_repo.create_membership(
-                user_id=user.id,
-                tenant_id=invite.tenant_id,
-                role=invite.role,
-            )
-
-            # Mark invite as accepted
-            await self.invite_repo.mark_accepted(invite, user.id)
-
-            # Capture IDs before commit (to avoid lazy loading issues after commit)
-            invite_id = str(invite.id)
-            user_id = str(user.id)
-
-            await self.session.commit()
-
-            # Refresh objects to ensure they're usable after commit
-            await self.session.refresh(invite)
-            await self.session.refresh(user)
-            await self.session.refresh(tenant)
-
-            logger.info(
-                "Invite accepted by new user",
-                invite_id=invite_id,
-                user_id=user_id,
-            )
-            return invite, user, tenant
+            # Complete the invite acceptance
+            return await self._complete_invite_acceptance(invite, user, tenant)
 
         except ValueError:
             await self.session.rollback()
             raise
         except Exception as e:
             await self.session.rollback()
-            logger.error("Failed to accept invite for new user", error=str(e))
+            logger.error("Failed to accept invite", error=str(e))
             raise
+
+    async def _complete_invite_acceptance(
+        self,
+        invite: TenantInvite,
+        user: User,
+        tenant: Tenant,
+    ) -> tuple[TenantInvite, User, Tenant]:
+        """Complete invite acceptance after validation.
+
+        Creates membership, marks invite as accepted, commits, and refreshes objects.
+        """
+        # Create membership
+        self.membership_repo.create_membership(
+            user_id=user.id,
+            tenant_id=invite.tenant_id,
+            role=invite.role,
+        )
+
+        # Mark invite as accepted
+        await self.invite_repo.mark_accepted(invite, user.id)
+
+        # Capture IDs before commit (to avoid lazy loading issues after commit)
+        invite_id = str(invite.id)
+        user_id = str(user.id)
+
+        await self.session.commit()
+
+        # Refresh objects to ensure they're usable after commit
+        await self.session.refresh(invite)
+        await self.session.refresh(user)
+        await self.session.refresh(tenant)
+
+        logger.info(
+            "Invite accepted",
+            invite_id=invite_id,
+            user_id=user_id,
+        )
+        return invite, user, tenant
 
     async def get_invite_info(self, token: str) -> dict[str, Any] | None:
         """Get invite info for display (before accepting).
@@ -297,7 +237,7 @@ class InviteService:
         Returns public info about the invite without revealing sensitive data.
         Used to show "You've been invited to join X" screen.
         """
-        token_hash = sha256(token.encode()).hexdigest()
+        token_hash = hash_token(token)
         invite = await self.invite_repo.get_valid_by_hash(token_hash)
 
         if invite is None:
@@ -311,7 +251,6 @@ class InviteService:
             "tenant_slug": tenant.slug if tenant else None,
             "role": invite.role,
             "expires_at": invite.expires_at,
-            "is_existing_user": await self.user_repo.exists_by_email(invite.email),
         }
 
     async def get_invite_by_id(self, invite_id: UUID) -> TenantInvite | None:

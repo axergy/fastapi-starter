@@ -2,13 +2,13 @@
 
 import secrets
 from datetime import timedelta
-from hashlib import sha256
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.core.config import get_settings
 from src.app.core.logging import get_logger
 from src.app.core.notifications import send_verification_email, send_welcome_email
+from src.app.core.security import hash_token
 from src.app.models.base import utc_now
 from src.app.models.public import EmailVerificationToken, User
 from src.app.repositories import EmailVerificationTokenRepository, UserRepository
@@ -49,7 +49,7 @@ class EmailVerificationService:
 
             # Generate cryptographically secure token
             token = secrets.token_urlsafe(32)
-            token_hash = sha256(token.encode()).hexdigest()
+            token_hash = hash_token(token)
 
             # Calculate expiry
             expires_at = utc_now() + timedelta(hours=settings.email_verification_expire_hours)
@@ -84,7 +84,7 @@ class EmailVerificationService:
             The verified User, or None if invalid/expired
         """
         try:
-            token_hash = sha256(token.encode()).hexdigest()
+            token_hash = hash_token(token)
             db_token = await self.token_repo.get_valid_by_hash(token_hash)
 
             if db_token is None:

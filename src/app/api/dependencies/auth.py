@@ -12,11 +12,12 @@ from src.app.core.logging import bind_user_context
 from src.app.core.security import decode_token
 from src.app.models import MembershipRole, User, UserTenantMembership
 from src.app.services.auth_service import TokenType
+from src.app.services.user_service import UserService
 
 
 async def _validate_access_token(
     authorization: str | None,
-    session: DBSession,
+    user_service: UserService,
 ) -> tuple[dict[str, Any], User]:
     """Validate access token and return (payload, user).
 
@@ -59,8 +60,8 @@ async def _validate_access_token(
             detail="Invalid user_id in token",
         ) from e
 
-    result = await session.execute(select(User).where(User.id == user_uuid))
-    user = result.scalar_one_or_none()
+    # Use UserService instead of direct DB query
+    user = await user_service.get_by_id(user_uuid)
 
     if user is None or not user.is_active:
         raise HTTPException(
@@ -71,16 +72,27 @@ async def _validate_access_token(
     return payload, user
 
 
+def _get_user_service(user_repo: "UserRepo", session: DBSession) -> UserService:
+    """Create UserService for auth dependencies (avoids circular import)."""
+    return UserService(user_repo, session)
+
+
+# Import here to avoid circular dependency
+from src.app.api.dependencies.repositories import UserRepo  # noqa: E402
+
+
 async def get_current_user(
     session: DBSession,
     tenant: ValidatedTenant,
+    user_repo: UserRepo,
     authorization: Annotated[str | None, Header()] = None,
 ) -> User:
     """Validate access token and return current user.
 
     IMPORTANT: Validates that JWT tenant_id matches the X-Tenant-ID header's tenant.
     """
-    payload, user = await _validate_access_token(authorization, session)
+    user_service = _get_user_service(user_repo, session)
+    payload, user = await _validate_access_token(authorization, user_service)
 
     # CRITICAL: Validate JWT tenant_id matches X-Tenant-ID header's tenant
     token_tenant_id = payload.get("tenant_id")
@@ -131,6 +143,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 async def get_authenticated_user(
     session: DBSession,
+    user_repo: UserRepo,
     authorization: Annotated[str | None, Header()] = None,
 ) -> User:
     """Validate access token and return user (no tenant context required).
@@ -138,7 +151,8 @@ async def get_authenticated_user(
     Used for tenant-agnostic endpoints like listing user's tenants.
     Does NOT validate tenant membership - just validates the token and user exists.
     """
-    _, user = await _validate_access_token(authorization, session)
+    user_service = _get_user_service(user_repo, session)
+    _, user = await _validate_access_token(authorization, user_service)
     return user
 
 

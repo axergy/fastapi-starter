@@ -1,7 +1,6 @@
 """Authentication service - handles login, token refresh (Lobby Pattern)."""
 
 import hmac
-from hashlib import sha256
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +11,7 @@ from src.app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_token,
     verify_password,
 )
 from src.app.models.public import RefreshToken
@@ -91,7 +91,7 @@ class AuthService:
             refresh_token, expires_at = create_refresh_token(user.id, self.tenant_id)
 
             # Store refresh token in public schema with tenant_id
-            token_hash = sha256(refresh_token.encode()).hexdigest()
+            token_hash = hash_token(refresh_token)
             db_token = RefreshToken(
                 user_id=user.id,
                 tenant_id=self.tenant_id,
@@ -143,7 +143,7 @@ class AuthService:
         except ValueError:
             return None
 
-        token_hash = sha256(refresh_token.encode()).hexdigest()
+        token_hash = hash_token(refresh_token)
 
         # Fast path: check Redis blacklist first
         blacklisted = await is_token_blacklisted(token_hash)
@@ -168,7 +168,7 @@ class AuthService:
 
             # Create new refresh token with rotation
             new_refresh_token, new_expires_at = create_refresh_token(user_id, self.tenant_id)
-            new_token_hash = sha256(new_refresh_token.encode()).hexdigest()
+            new_token_hash = hash_token(new_refresh_token)
 
             # Store new refresh token in database
             new_db_token = RefreshToken(
@@ -202,7 +202,7 @@ class AuthService:
         database as source of truth.
         """
         try:
-            token_hash = sha256(refresh_token.encode()).hexdigest()
+            token_hash = hash_token(refresh_token)
             db_token = await self.token_repo.get_by_hash(token_hash)
 
             if db_token is None:

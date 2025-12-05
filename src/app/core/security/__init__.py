@@ -8,6 +8,7 @@ from src.app.core.security.crypto import (
     create_refresh_token,
     decode_token,
     hash_password,
+    hash_token,
     verify_password,
 )
 from src.app.core.security.validators import validate_schema_name
@@ -18,6 +19,7 @@ __all__ = [
     "create_refresh_token",
     "decode_token",
     "hash_password",
+    "hash_token",
     "verify_password",
     # Validators
     "validate_schema_name",

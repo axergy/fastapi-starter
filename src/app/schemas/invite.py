@@ -56,19 +56,11 @@ class InviteInfoResponse(BaseModel):
     tenant_slug: str | None
     role: str
     expires_at: datetime
-    is_existing_user: bool
 
 
-class AcceptInviteExistingUser(BaseModel):
-    """Accept invite as existing logged-in user."""
-
-    type: Literal["existing"] = "existing"
-
-
-class AcceptInviteNewUser(BaseModel):
+class AcceptInviteRequest(BaseModel):
     """Accept invite and create new account."""
 
-    type: Literal["new"]
     email: EmailStr
     password: str = Field(min_length=8, max_length=100)
     full_name: str = Field(min_length=1, max_length=100)
@@ -91,17 +83,12 @@ class AcceptInviteNewUser(BaseModel):
         return v
 
 
-# Discriminated union for accept request
-AcceptInviteRequest = AcceptInviteExistingUser | AcceptInviteNewUser
-
-
 class AcceptInviteResponse(BaseModel):
     """Response after accepting an invite."""
 
     message: str
     tenant_slug: str
     user_id: UUID
-    is_new_user: bool
 
 
 class InviteCancelResponse(BaseModel):

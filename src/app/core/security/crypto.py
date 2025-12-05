@@ -1,6 +1,7 @@
-"""Cryptographic utilities - password hashing and JWT tokens."""
+"""Cryptographic utilities - password hashing, JWT tokens, and token hashing."""
 
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Any
 from uuid import UUID, uuid7
 
@@ -8,6 +9,11 @@ import argon2
 from jose import JWTError, jwt
 
 from src.app.core.config import get_settings
+
+
+def hash_token(token: str) -> str:
+    """Hash a token using SHA256 for secure storage."""
+    return sha256(token.encode()).hexdigest()
 
 
 def _create_password_hasher() -> argon2.PasswordHasher:

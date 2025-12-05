@@ -3,19 +3,16 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from src.app.api.dependencies import (
     AdminUser,
-    DBSession,
     InviteServiceDep,
     InviteServicePublicDep,
 )
 from src.app.core.rate_limit import limiter
 from src.app.schemas.invite import (
-    AcceptInviteExistingUser,
-    AcceptInviteNewUser,
+    AcceptInviteRequest,
     AcceptInviteResponse,
     InviteCancelResponse,
     InviteCreateRequest,
@@ -310,50 +307,27 @@ async def get_invite_info(
     return InviteInfoResponse(**info)
 
 
-class AcceptInviteRequestBody(BaseModel):
-    """Accept invite request with discriminated union."""
-
-    data: AcceptInviteExistingUser | AcceptInviteNewUser
-
-
 @router.post(
     "/t/{token}/accept",
     response_model=AcceptInviteResponse,
     summary="Accept invite",
-    description=(
-        "Accept an invite. For existing users, include Authorization header. "
-        "For new users, include email, password, and full_name in body."
-    ),
+    description="Accept an invite and create a new account. Users can only belong to one tenant.",
     responses={
         200: {
-            "description": "Invite accepted successfully",
+            "description": "Invite accepted, account created",
             "content": {
                 "application/json": {
-                    "examples": {
-                        "existing_user": {
-                            "summary": "Existing user joined tenant",
-                            "value": {
-                                "message": "Successfully joined tenant",
-                                "tenant_slug": "acme-corp",
-                                "user_id": "550e8400-e29b-41d4-a716-446655440000",
-                                "is_new_user": False,
-                            },
-                        },
-                        "new_user": {
-                            "summary": "New user registered and joined",
-                            "value": {
-                                "message": "Account created and joined tenant successfully",
-                                "tenant_slug": "acme-corp",
-                                "user_id": "6fa459ea-ee8a-3ca4-894e-db77e160355e",
-                                "is_new_user": True,
-                            },
-                        },
+                    "example": {
+                        "message": "Account created and joined tenant successfully",
+                        "tenant_slug": "acme-corp",
+                        "user_id": "550e8400-e29b-41d4-a716-446655440000",
                     }
                 }
             },
         },
-        400: {"description": "Invalid request or invite already accepted"},
-        401: {"description": "Invalid or expired auth token (for existing users)"},
+        400: {
+            "description": "Invalid request, email already registered, or invite already accepted"
+        },
         404: {"description": "Invalid or expired invite"},
     },
 )
@@ -362,94 +336,15 @@ async def accept_invite(
     request: Request,
     token: str,
     invite_service: InviteServicePublicDep,
-    session: DBSession,
-    body: AcceptInviteExistingUser | AcceptInviteNewUser | None = None,
-    authorization: Annotated[str | None, Header()] = None,
+    body: AcceptInviteRequest,
 ) -> AcceptInviteResponse:
-    """Accept an invite.
+    """Accept an invite and create a new account.
 
-    Two modes:
-    1. Existing user: Include Authorization header, body can be empty or {"type": "existing"}
-    2. New user: Include {"type": "new", "email": "...", "password": "...", "full_name": "..."}
+    Users can only belong to one tenant. If the email is already registered,
+    the request will be rejected.
     """
-    # Import here to avoid circular dependency
-    from sqlmodel import select
-
-    from src.app.core.security import decode_token
-    from src.app.models.public import User
-    from src.app.services.auth_service import TokenType
-
-    # Determine if this is an existing user (has valid auth) or new user
-    if authorization and authorization.startswith("Bearer "):
-        # Existing user flow
-        auth_token = authorization[7:]
-        payload = decode_token(auth_token)
-
-        if payload is None or payload.get("type") != TokenType.ACCESS:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-            )
-
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload",
-            )
-
-        # Get user
-        from uuid import UUID as UUIDType
-
-        try:
-            user_uuid = UUIDType(user_id)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid user_id in token",
-            ) from e
-
-        result = await session.execute(select(User).where(User.id == user_uuid))
-        user = result.scalar_one_or_none()
-
-        if user is None or not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found or inactive",
-            )
-
-        try:
-            invite, accepted_user, tenant = await invite_service.accept_invite_existing_user(
-                token=token,
-                user=user,
-            )
-            return AcceptInviteResponse(
-                message="Successfully joined tenant",
-                tenant_slug=tenant.slug,
-                user_id=accepted_user.id,
-                is_new_user=False,
-            )
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e),
-            ) from e
-
-    # New user flow - body must contain registration data
-    if body is None or isinstance(body, AcceptInviteExistingUser):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Auth header required for existing users, or provide registration data",
-        )
-
-    if not isinstance(body, AcceptInviteNewUser):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid request body",
-        )
-
     try:
-        invite, new_user, tenant = await invite_service.accept_invite_new_user(
+        invite, user, tenant = await invite_service.accept_invite(
             token=token,
             email=body.email,
             password=body.password,
@@ -458,8 +353,7 @@ async def accept_invite(
         return AcceptInviteResponse(
             message="Account created and joined tenant successfully",
             tenant_slug=tenant.slug,
-            user_id=new_user.id,
-            is_new_user=True,
+            user_id=user.id,
         )
     except ValueError as e:
         raise HTTPException(
