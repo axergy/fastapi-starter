@@ -159,3 +159,21 @@ class AuthService:
         except Exception:
             await self.session.rollback()
             raise
+
+    async def revoke_all_tokens_for_user(self, user_id: UUID) -> int:
+        """Revoke all refresh tokens for a user in the current tenant.
+
+        Use cases:
+        - Password reset (invalidate all sessions)
+        - Account compromise (force re-authentication)
+        - User deactivation
+
+        Returns the number of tokens revoked.
+        """
+        try:
+            count = await self.token_repo.revoke_all_for_user(user_id, self.tenant_id)
+            await self.session.commit()
+            return count
+        except Exception:
+            await self.session.rollback()
+            raise

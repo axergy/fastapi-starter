@@ -91,11 +91,13 @@ Validated code review findings for the FastAPI SaaS Starter project.
 **Implementation:** Extracted common token validation into `_validate_access_token()` helper
 **File:** `src/app/api/dependencies/auth.py`
 
-### 11. Add revoke_all_tokens_for_user Function
-**Current:** Only single-token revocation exists
+### 11. ~~Add revoke_all_tokens_for_user Function~~ ✅ DONE
+**Current:** ~~Only single-token revocation exists~~ Now supports bulk revocation
 **Benefit:** Security for password reset, account compromise scenarios
-**Implementation:** Add `revoke_all_tokens_for_user(tenant_id, user_id)` to auth service
-**File:** `src/app/services/auth_service.py`
+**Implementation:**
+- Added `RefreshTokenRepository.revoke_all_for_user(user_id, tenant_id)` - bulk UPDATE query
+- Added `AuthService.revoke_all_tokens_for_user(user_id)` - tenant-scoped service method
+**Files:** `src/app/repositories/public/token.py`, `src/app/services/auth_service.py`
 
 ### 12. Soft-Delete + Cleanup for Failed Tenants
 **Current:** Failed tenants remain in DB with `status=failed`, schemas may be orphaned

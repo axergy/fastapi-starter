@@ -45,3 +45,20 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
             )
         )
         return result.scalar_one_or_none()
+
+    async def revoke_all_for_user(self, user_id: UUID, tenant_id: UUID) -> int:
+        """Revoke all active refresh tokens for a user in a tenant.
+
+        Returns the number of tokens revoked.
+        """
+        from sqlalchemy import update
+
+        stmt = (
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id)  # type: ignore[arg-type]
+            .where(RefreshToken.tenant_id == tenant_id)  # type: ignore[arg-type]
+            .where(RefreshToken.revoked == False)  # type: ignore[arg-type]  # noqa: E712
+            .values(revoked=True)
+        )
+        result = await self.session.execute(stmt)
+        return result.rowcount or 0  # type: ignore[attr-defined]
