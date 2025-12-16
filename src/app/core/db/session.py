@@ -14,7 +14,7 @@ from src.app.core.security.validators import validate_schema_name
 async def get_tenant_session(
     tenant_schema: str,
     engine: AsyncEngine | None = None,
-) -> AsyncGenerator[AsyncSession, None]:
+) -> AsyncGenerator[AsyncSession]:
     """
     Create a session scoped to a specific tenant schema.
 
@@ -27,11 +27,40 @@ async def get_tenant_session(
         engine = get_engine()
 
     async with engine.connect() as connection:
-        # Use quote_ident to properly quote the schema name
-        quoted_schema = await connection.scalar(
-            text("SELECT quote_ident(:schema)").bindparams(schema=tenant_schema)
-        )
-        await connection.execute(text(f"SET search_path TO {quoted_schema}, public"))
+        try:
+            # Use quote_ident to properly quote the schema name
+            quoted_schema = await connection.scalar(
+                text("SELECT quote_ident(:schema)").bindparams(schema=tenant_schema)
+            )
+            await connection.execute(text(f"SET search_path TO {quoted_schema}, public"))
+            await connection.commit()
+
+            session_factory = async_sessionmaker(
+                bind=connection,
+                class_=AsyncSession,
+                expire_on_commit=False,
+                autoflush=False,
+            )
+
+            async with session_factory() as session:
+                yield session
+        finally:
+            # CRITICAL: Always reset before returning to pool
+            if not connection.closed:
+                await connection.execute(text("SET search_path TO public"))
+                await connection.commit()
+
+
+@asynccontextmanager
+async def get_public_session(
+    engine: AsyncEngine | None = None,
+) -> AsyncGenerator[AsyncSession]:
+    """Create a session for the public schema."""
+    if engine is None:
+        engine = get_engine()
+
+    async with engine.connect() as connection:
+        await connection.execute(text("SET search_path TO public"))
         await connection.commit()
 
         session_factory = async_sessionmaker(
@@ -42,27 +71,4 @@ async def get_tenant_session(
         )
 
         async with session_factory() as session:
-            try:
-                yield session
-            finally:
-                await connection.execute(text("SET search_path TO public"))
-                await connection.commit()
-
-
-@asynccontextmanager
-async def get_public_session(
-    engine: AsyncEngine | None = None,
-) -> AsyncGenerator[AsyncSession, None]:
-    """Create a session for the public schema."""
-    if engine is None:
-        engine = get_engine()
-
-    session_factory = async_sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-    )
-
-    async with session_factory() as session:
-        yield session
+            yield session

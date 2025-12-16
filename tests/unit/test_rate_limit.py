@@ -122,54 +122,54 @@ class TestGetRateLimitKey:
 class TestCheckInMemoryRateLimit:
     """Tests for in-memory token bucket rate limiter."""
 
-    def test_allows_request_when_bucket_has_tokens(self, mock_settings: MagicMock) -> None:
+    async def test_allows_request_when_bucket_has_tokens(self, mock_settings: MagicMock) -> None:
         """Request is allowed when tokens are available."""
         with patch("src.app.core.rate_limit.get_settings", return_value=mock_settings):
-            result = _check_in_memory_rate_limit("192.168.1.1")
+            result = await _check_in_memory_rate_limit("192.168.1.1")
 
         assert result is True
 
-    def test_creates_new_bucket_for_new_client(self, mock_settings: MagicMock) -> None:
+    async def test_creates_new_bucket_for_new_client(self, mock_settings: MagicMock) -> None:
         """New client gets a fresh bucket with burst tokens."""
         with patch("src.app.core.rate_limit.get_settings", return_value=mock_settings):
-            _check_in_memory_rate_limit("new-client-ip")
+            await _check_in_memory_rate_limit("new-client-ip")
 
         bucket = rate_limit._rate_limit_buckets["new-client-ip"]
         # Should have burst - 1 tokens after first request
         assert bucket["tokens"] == mock_settings.global_rate_limit_burst - 1
 
-    def test_decrements_tokens_on_each_request(self, mock_settings: MagicMock) -> None:
+    async def test_decrements_tokens_on_each_request(self, mock_settings: MagicMock) -> None:
         """Each allowed request decrements the token count."""
         with patch("src.app.core.rate_limit.get_settings", return_value=mock_settings):
-            _check_in_memory_rate_limit("test-client")
-            _check_in_memory_rate_limit("test-client")
-            _check_in_memory_rate_limit("test-client")
+            await _check_in_memory_rate_limit("test-client")
+            await _check_in_memory_rate_limit("test-client")
+            await _check_in_memory_rate_limit("test-client")
 
         bucket = rate_limit._rate_limit_buckets["test-client"]
         # Started with burst=20, consumed 3
         assert bucket["tokens"] == pytest.approx(17, abs=0.1)
 
-    def test_denies_request_when_bucket_empty(self, mock_settings: MagicMock) -> None:
+    async def test_denies_request_when_bucket_empty(self, mock_settings: MagicMock) -> None:
         """Request is denied when no tokens remain."""
         mock_settings.global_rate_limit_burst = 2
 
         with patch("src.app.core.rate_limit.get_settings", return_value=mock_settings):
             # Exhaust tokens
-            assert _check_in_memory_rate_limit("exhaust-client") is True
-            assert _check_in_memory_rate_limit("exhaust-client") is True
+            assert await _check_in_memory_rate_limit("exhaust-client") is True
+            assert await _check_in_memory_rate_limit("exhaust-client") is True
             # Third request should be denied
-            assert _check_in_memory_rate_limit("exhaust-client") is False
+            assert await _check_in_memory_rate_limit("exhaust-client") is False
 
-    def test_replenishes_tokens_over_time(self, mock_settings: MagicMock) -> None:
+    async def test_replenishes_tokens_over_time(self, mock_settings: MagicMock) -> None:
         """Tokens are replenished based on elapsed time."""
         mock_settings.global_rate_limit_burst = 2
         mock_settings.global_rate_limit_per_second = 10
 
         with patch("src.app.core.rate_limit.get_settings", return_value=mock_settings):
             # Exhaust tokens
-            _check_in_memory_rate_limit("replenish-client")
-            _check_in_memory_rate_limit("replenish-client")
-            assert _check_in_memory_rate_limit("replenish-client") is False
+            await _check_in_memory_rate_limit("replenish-client")
+            await _check_in_memory_rate_limit("replenish-client")
+            assert await _check_in_memory_rate_limit("replenish-client") is False
 
             # Manipulate time to simulate 0.5 seconds passing
             bucket = rate_limit._rate_limit_buckets["replenish-client"]
@@ -177,40 +177,40 @@ class TestCheckInMemoryRateLimit:
 
             # Should have ~5 tokens replenished (10/s * 0.5s)
             # but capped at burst=2, so 2 tokens available
-            assert _check_in_memory_rate_limit("replenish-client") is True
+            assert await _check_in_memory_rate_limit("replenish-client") is True
 
-    def test_tokens_capped_at_burst_limit(self, mock_settings: MagicMock) -> None:
+    async def test_tokens_capped_at_burst_limit(self, mock_settings: MagicMock) -> None:
         """Token count never exceeds burst limit even with long idle time."""
         mock_settings.global_rate_limit_burst = 5
         mock_settings.global_rate_limit_per_second = 100
 
         with patch("src.app.core.rate_limit.get_settings", return_value=mock_settings):
             # Make one request
-            _check_in_memory_rate_limit("cap-client")
+            await _check_in_memory_rate_limit("cap-client")
 
             # Simulate long idle time
             bucket = rate_limit._rate_limit_buckets["cap-client"]
             bucket["last_update"] = time.time() - 1000  # Long time ago
 
             # Make another request - should have max burst tokens
-            _check_in_memory_rate_limit("cap-client")
+            await _check_in_memory_rate_limit("cap-client")
 
             # Tokens should be capped at burst - 1 (after request)
             assert bucket["tokens"] <= mock_settings.global_rate_limit_burst
 
-    def test_separate_buckets_per_client(self, mock_settings: MagicMock) -> None:
+    async def test_separate_buckets_per_client(self, mock_settings: MagicMock) -> None:
         """Each client IP has its own independent bucket."""
         mock_settings.global_rate_limit_burst = 2
 
         with patch("src.app.core.rate_limit.get_settings", return_value=mock_settings):
             # Exhaust client1
-            _check_in_memory_rate_limit("client1")
-            _check_in_memory_rate_limit("client1")
-            assert _check_in_memory_rate_limit("client1") is False
+            await _check_in_memory_rate_limit("client1")
+            await _check_in_memory_rate_limit("client1")
+            assert await _check_in_memory_rate_limit("client1") is False
 
             # client2 should still have full bucket
-            assert _check_in_memory_rate_limit("client2") is True
-            assert _check_in_memory_rate_limit("client2") is True
+            assert await _check_in_memory_rate_limit("client2") is True
+            assert await _check_in_memory_rate_limit("client2") is True
 
 
 # --- global_rate_limit_middleware Tests ---

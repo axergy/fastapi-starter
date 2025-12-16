@@ -1,12 +1,13 @@
 """Service factory dependencies."""
 
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.api.dependencies.db import DBSession
 from src.app.api.dependencies.repositories import (
-    AuditLogRepo,
     EmailVerificationRepo,
     InviteRepo,
     MembershipRepo,
@@ -16,6 +17,8 @@ from src.app.api.dependencies.repositories import (
     WorkflowExecRepo,
 )
 from src.app.api.dependencies.tenant import ValidatedTenant
+from src.app.core.db.engine import get_engine
+from src.app.repositories import AuditLogRepository
 from src.app.services.admin_service import AdminService
 from src.app.services.assume_identity_service import AssumeIdentityService
 from src.app.services.audit_service import AuditService
@@ -110,13 +113,15 @@ def get_admin_service(
     return AdminService(tenant_repo, session)
 
 
-def get_audit_service(
-    audit_repo: AuditLogRepo,
-    session: DBSession,
+async def get_audit_service(
     tenant: ValidatedTenant,
-) -> AuditService:
-    """Get audit service with tenant context."""
-    return AuditService(audit_repo, session, tenant.id)
+) -> AsyncGenerator[AuditService]:
+    """Get audit service with its own isolated session."""
+    engine = get_engine()
+    # Create a dedicated session for auditing (commits independently)
+    async with AsyncSession(engine) as session:
+        repo = AuditLogRepository(session)
+        yield AuditService(repo, session, tenant.id)
 
 
 def get_assume_identity_service(

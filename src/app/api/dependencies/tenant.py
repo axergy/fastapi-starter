@@ -35,6 +35,12 @@ async def get_validated_tenant(
                 detail="Tenant not found",
             )
 
+        if tenant.deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Tenant has been deleted",
+            )
+
         if not tenant.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

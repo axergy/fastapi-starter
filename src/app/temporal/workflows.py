@@ -226,12 +226,12 @@ class TenantProvisioningWorkflow:
 @workflow.defn
 class TenantDeletionWorkflow:
     """
-    Delete a tenant: drop schema, then soft-delete record.
+    Delete a tenant: soft-delete record first, then drop schema.
 
     Steps:
-    1. Get tenant info (schema_name)
-    2. Drop tenant schema (CASCADE removes all data)
-    3. Soft-delete tenant record (set deleted_at, is_active=False)
+    1. Soft-delete tenant record (set deleted_at, is_active=False) - stops API requests immediately
+    2. Get tenant info (schema_name)
+    3. Drop tenant schema (CASCADE removes all data) - now safe, tenant already marked deleted
 
     Idempotent: Safe to retry - each step handles already-completed state.
     """
@@ -253,7 +253,19 @@ class TenantDeletionWorkflow:
             get_tenant_info,
         )
 
-        # Step 1: Get tenant info (schema_name)
+        # Step 1: Soft-delete tenant record FIRST (stops API requests immediately)
+        await workflow.execute_activity(
+            soft_delete_tenant,
+            SoftDeleteTenantInput(tenant_id=tenant_id),
+            start_to_close_timeout=timedelta(seconds=10),
+            retry_policy=RetryPolicy(
+                maximum_attempts=3,
+                initial_interval=timedelta(seconds=1),
+            ),
+        )
+        workflow.logger.info(f"Tenant {tenant_id} soft-deleted")
+
+        # Step 2: Get tenant info (schema_name)
         tenant_info: GetTenantOutput = await workflow.execute_activity(
             get_tenant_info,
             GetTenantInput(tenant_id=tenant_id),
@@ -266,7 +278,7 @@ class TenantDeletionWorkflow:
 
         workflow.logger.info(f"Deleting tenant: {tenant_id}, schema: {tenant_info.schema_name}")
 
-        # Step 2: Drop tenant schema
+        # Step 3: Drop tenant schema (now safe, tenant already marked deleted)
         await workflow.execute_activity(
             drop_tenant_schema,
             DropSchemaInput(schema_name=tenant_info.schema_name),
@@ -277,18 +289,6 @@ class TenantDeletionWorkflow:
             ),
         )
         workflow.logger.info(f"Schema {tenant_info.schema_name} dropped")
-
-        # Step 3: Soft-delete tenant record
-        await workflow.execute_activity(
-            soft_delete_tenant,
-            SoftDeleteTenantInput(tenant_id=tenant_id),
-            start_to_close_timeout=timedelta(seconds=10),
-            retry_policy=RetryPolicy(
-                maximum_attempts=3,
-                initial_interval=timedelta(seconds=1),
-            ),
-        )
-        workflow.logger.info(f"Tenant {tenant_id} soft-deleted")
 
         return {"deleted": True, "tenant_id": tenant_id}
 

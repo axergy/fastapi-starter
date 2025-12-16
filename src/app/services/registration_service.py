@@ -41,15 +41,16 @@ class RegistrationService:
     ) -> tuple[User, str]:
         """Register new user AND create a new tenant.
 
-        1. Create user in public.users (flush to get ID)
+        1. Create user in public.users
         2. Create tenant record (unique constraint on slug handles races)
-        3. Start TenantProvisioningWorkflow (provisions tenant + creates membership)
-        4. Commit only if workflow starts successfully
+        3. COMMIT the session (point of no return)
+        4. Refresh objects to ensure IDs are available
+        5. Start TenantProvisioningWorkflow (provisions tenant + creates membership)
 
         Returns (user, workflow_id).
-        Raises ValueError if email already exists, workflow fails to start, etc.
+        Raises ValueError if email already exists or IntegrityError on commit.
         """
-        # Create user in public schema (flush to get user.id without committing)
+        # Create user in public schema
         user = User(
             email=email,
             hashed_password=hash_password(password),
@@ -57,23 +58,26 @@ class RegistrationService:
         )
         self.user_repo.add(user)
 
-        try:
-            await self.session.flush()
-        except IntegrityError as e:
-            await self.session.rollback()
-            raise ValueError("Email already registered") from e
-
-        # Create tenant record FIRST (unique constraint on slug handles races)
+        # Create tenant record (unique constraint on slug handles races)
         tenant = Tenant(name=tenant_name, slug=tenant_slug, status=TenantStatus.PROVISIONING.value)
         self.session.add(tenant)
 
+        # COMMIT before starting workflow - this is the point of no return
         try:
-            await self.session.flush()
+            await self.session.commit()
         except IntegrityError as e:
             await self.session.rollback()
-            raise ValueError(f"Tenant with slug '{tenant_slug}' already exists") from e
+            # Check which constraint failed
+            if "email" in str(e).lower() or "users" in str(e).lower():
+                raise ValueError("Email already registered") from e
+            else:
+                raise ValueError(f"Tenant with slug '{tenant_slug}' already exists") from e
 
-        # Start tenant provisioning workflow with tenant_id
+        # Refresh objects to ensure all IDs are populated
+        await self.session.refresh(user)
+        await self.session.refresh(tenant)
+
+        # Start tenant provisioning workflow AFTER commit
         settings = get_settings()
         client = await get_temporal_client()
         workflow_id = f"tenant-provision-{tenant_slug}"
@@ -85,13 +89,17 @@ class RegistrationService:
                 id=workflow_id,
                 task_queue=settings.temporal_task_queue,
             )
-            # Only commit if workflow started successfully
-            await self.session.commit()
         except Exception as e:
-            await self.session.rollback()
+            # Workflow start failed, but DB is committed - tenant exists in "provisioning" state
+            # Don't rollback - log the error and allow manual retry
+            logger.error(
+                "Failed to start provisioning workflow - tenant created but workflow not started",
+                tenant_id=str(tenant.id),
+                user_id=str(user.id),
+                workflow_id=workflow_id,
+                error=str(e),
+            )
             raise ValueError(f"Failed to start tenant provisioning: {e}") from e
-
-        await self.session.refresh(user)
 
         # Send verification email if service is available
         if self.email_verification_service:

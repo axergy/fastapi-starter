@@ -40,6 +40,26 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    """
+    Filter objects to prevent cross-schema contamination.
+    - Public migrations: only touch tables with schema='public'
+    - Tenant migrations: only touch tables WITHOUT schema='public'
+    """
+    if type_ == "table":
+        is_tenant_migration = context.get_tag_argument() is not None
+        object_schema = getattr(object, "schema", None)
+
+        if is_tenant_migration:
+            # Tenant migrations should ONLY touch tables WITHOUT 'public' schema
+            return object_schema != "public"
+        else:
+            # Public migrations should ONLY touch tables WITH 'public' schema
+            return object_schema == "public"
+
+    return True
+
+
 def do_run_migrations(connection, schema: str | None = None) -> None:
     """Run migrations for a specific schema."""
     if schema:
@@ -61,12 +81,14 @@ def do_run_migrations(connection, schema: str | None = None) -> None:
             version_table_schema=schema,
             include_schemas=True,
             compare_type=True,
+            include_object=include_object,
         )
     else:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_object=include_object,
         )
 
     with context.begin_transaction():

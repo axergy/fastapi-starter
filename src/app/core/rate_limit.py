@@ -8,9 +8,9 @@ Provides two layers of rate limiting:
 2. Endpoint decorators: Fine-grained limits after tenant validation (abuse prevention)
 """
 
+import asyncio
 import time
 from collections import defaultdict
-from threading import Lock
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 # In-memory fallback storage for global rate limiting
 _rate_limit_buckets: dict[str, dict[str, float]] = defaultdict(dict)
-_rate_limit_lock = Lock()
+_rate_limit_lock = asyncio.Lock()
 
 # Lua script for atomic Redis token bucket operation
 # This runs atomically on Redis server - no race conditions
@@ -114,18 +114,18 @@ def create_limiter() -> Limiter:
 limiter = create_limiter()
 
 
-def _check_in_memory_rate_limit(client_ip: str) -> bool:
+async def _check_in_memory_rate_limit(client_ip: str) -> bool:
     """Check rate limit using in-memory token bucket (fallback).
 
     Returns True if request is allowed, False if rate limited.
-    Thread-safe for multi-threaded ASGI servers.
+    Async-safe for ASGI servers using asyncio.Lock.
     """
     settings = get_settings()
     rate = settings.global_rate_limit_per_second
     burst = settings.global_rate_limit_burst
     now = time.time()
 
-    with _rate_limit_lock:
+    async with _rate_limit_lock:
         if client_ip not in _rate_limit_buckets:
             _rate_limit_buckets[client_ip] = {
                 "tokens": float(burst),
@@ -214,9 +214,9 @@ async def _check_global_rate_limit(client_ip: str) -> bool:
             # Reset script SHA in case Redis restarted
             global _script_sha
             _script_sha = None
-            return _check_in_memory_rate_limit(client_ip)
+            return await _check_in_memory_rate_limit(client_ip)
 
-    return _check_in_memory_rate_limit(client_ip)
+    return await _check_in_memory_rate_limit(client_ip)
 
 
 async def global_rate_limit_middleware(
