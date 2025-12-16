@@ -8,7 +8,10 @@ import os
 
 # Set APP_ENV to testing before any app imports to disable rate limiting
 os.environ.setdefault("APP_ENV", "testing")
+# Disable SSL for local test database (PostgreSQL without SSL support)
+os.environ.setdefault("DATABASE_SSL_MODE", "disable")
 
+# ruff: noqa: E402 - Imports must be after env var setup
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -17,6 +20,10 @@ from redis.asyncio import Redis
 
 from src.app.core import rate_limit
 from src.app.core import redis as redis_core
+from src.app.core.config import get_settings
+
+# Clear settings cache to ensure test environment variables are picked up
+get_settings.cache_clear()
 
 # --- Rate Limit Fixtures ---
 

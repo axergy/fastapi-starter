@@ -485,7 +485,7 @@ class TestAssumedTokenUsage:
         payload = decode_token(assumed_token)
         assert payload is not None
         assert payload["sub"] == test_user["id"]
-        assert payload["type"] == "access"
+        assert payload["type"] == "assumed_access"  # Assumed tokens have distinct type
         assert "assumed_identity" in payload
         assert payload["assumed_identity"]["operator_user_id"] == test_superuser_with_tenant["id"]
         assert payload["assumed_identity"]["reason"] == "Debugging"
