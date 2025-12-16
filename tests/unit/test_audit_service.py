@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.app.core.audit_context import AuditContext
+from src.app.api.context import AuditContext
 from src.app.models.public import AuditAction, AuditStatus
 from src.app.services.audit_service import AuditService
 

@@ -9,9 +9,11 @@ from src.app.api.dependencies.auth import (
     AdminUser,
     AuthenticatedUser,
     CurrentUser,
+    OptionalAssumedIdentityContext,
     SuperUser,
     get_authenticated_user,
     get_current_user,
+    get_optional_assumed_identity_context,
     require_admin_role,
     require_superuser,
 )
@@ -44,6 +46,7 @@ from src.app.api.dependencies.repositories import (
 # Services
 from src.app.api.dependencies.services import (
     AdminServiceDep,
+    AssumeIdentityServiceDep,
     AuditServiceDep,
     AuthServiceDep,
     EmailVerificationServiceDep,
@@ -53,6 +56,7 @@ from src.app.api.dependencies.services import (
     TenantServiceDep,
     UserServiceDep,
     get_admin_service,
+    get_assume_identity_service,
     get_audit_service,
     get_auth_service,
     get_email_verification_service,
@@ -83,9 +87,11 @@ __all__ = [
     "AdminUser",
     "AuthenticatedUser",
     "CurrentUser",
+    "OptionalAssumedIdentityContext",
     "SuperUser",
     "get_authenticated_user",
     "get_current_user",
+    "get_optional_assumed_identity_context",
     "require_admin_role",
     "require_superuser",
     # Repositories
@@ -107,6 +113,7 @@ __all__ = [
     "get_workflow_execution_repository",
     # Services
     "AdminServiceDep",
+    "AssumeIdentityServiceDep",
     "AuditServiceDep",
     "AuthServiceDep",
     "EmailVerificationServiceDep",
@@ -116,6 +123,7 @@ __all__ = [
     "TenantServiceDep",
     "UserServiceDep",
     "get_admin_service",
+    "get_assume_identity_service",
     "get_audit_service",
     "get_auth_service",
     "get_email_verification_service",

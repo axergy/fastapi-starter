@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.app.core.audit_context import (
+from src.app.api.context import (
     AuditContext,
     clear_audit_context,
     get_audit_context,

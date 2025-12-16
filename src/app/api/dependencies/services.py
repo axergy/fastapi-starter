@@ -17,6 +17,7 @@ from src.app.api.dependencies.repositories import (
 )
 from src.app.api.dependencies.tenant import ValidatedTenant
 from src.app.services.admin_service import AdminService
+from src.app.services.assume_identity_service import AssumeIdentityService
 from src.app.services.audit_service import AuditService
 from src.app.services.auth_service import AuthService
 from src.app.services.email_verification_service import EmailVerificationService
@@ -118,6 +119,16 @@ def get_audit_service(
     return AuditService(audit_repo, session, tenant.id)
 
 
+def get_assume_identity_service(
+    user_repo: UserRepo,
+    membership_repo: MembershipRepo,
+    tenant_repo: TenantRepo,
+    session: DBSession,
+) -> AssumeIdentityService:
+    """Get assume identity service."""
+    return AssumeIdentityService(user_repo, membership_repo, tenant_repo, session)
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 TenantServiceDep = Annotated[TenantService, Depends(get_tenant_service)]
@@ -128,4 +139,5 @@ EmailVerificationServiceDep = Annotated[
 InviteServiceDep = Annotated[InviteService, Depends(get_invite_service)]
 InviteServicePublicDep = Annotated[InviteService, Depends(get_invite_service_public)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
+AssumeIdentityServiceDep = Annotated[AssumeIdentityService, Depends(get_assume_identity_service)]
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]

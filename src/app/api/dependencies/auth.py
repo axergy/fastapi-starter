@@ -1,11 +1,17 @@
 """Authentication and authorization dependencies."""
 
+import contextlib
+from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlmodel import select
 
+from src.app.api.context import (
+    AssumedIdentityContext,
+    get_assumed_identity_context,
+)
 from src.app.api.dependencies.db import DBSession
 from src.app.api.dependencies.tenant import ValidatedTenant
 from src.app.core.logging import bind_user_context
@@ -18,11 +24,14 @@ from src.app.services.user_service import UserService
 async def _validate_access_token(
     authorization: str | None,
     user_service: UserService,
-) -> tuple[dict[str, Any], User]:
-    """Validate access token and return (payload, user).
+) -> tuple[dict[str, Any], User, AssumedIdentityContext | None]:
+    """Validate access token and return (payload, user, assumed_identity_context).
 
     Common validation logic shared by get_current_user and get_authenticated_user.
     Validates: header format, token decode, token type, user_id, user exists + active.
+
+    If the token contains assumed_identity claims, validates that the operator
+    is still an active superuser and returns the assumed identity context.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -69,7 +78,57 @@ async def _validate_access_token(
             detail="User not found or inactive",
         )
 
-    return payload, user
+    # Check for assumed identity claims
+    assumed_identity_ctx = None
+    assumed_identity_data = payload.get("assumed_identity")
+
+    if assumed_identity_data:
+        # Validate operator_user_id is present
+        operator_user_id = assumed_identity_data.get("operator_user_id")
+        if not operator_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid assumed identity token",
+            )
+
+        try:
+            operator_user_uuid = UUID(operator_user_id)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid operator_user_id in token",
+            ) from e
+
+        # Verify operator is still an active superuser
+        operator_user = await user_service.get_by_id(operator_user_uuid)
+        if operator_user is None or not operator_user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Operator user not found or inactive",
+            )
+
+        if not operator_user.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Assumed identity not authorized - operator is not a superuser",
+            )
+
+        # Parse started_at if present
+        started_at = None
+        if assumed_identity_data.get("started_at"):
+            with contextlib.suppress(ValueError):
+                started_at = datetime.fromisoformat(assumed_identity_data["started_at"])
+
+        # Build assumed identity context
+        assumed_identity_ctx = AssumedIdentityContext(
+            operator_user_id=operator_user_uuid,
+            assumed_user_id=user_uuid,
+            tenant_id=UUID(payload.get("tenant_id", "")),
+            reason=assumed_identity_data.get("reason"),
+            started_at=started_at,
+        )
+
+    return payload, user, assumed_identity_ctx
 
 
 def _get_user_service(user_repo: "UserRepo", session: DBSession) -> UserService:
@@ -90,9 +149,12 @@ async def get_current_user(
     """Validate access token and return current user.
 
     IMPORTANT: Validates that JWT tenant_id matches the X-Tenant-ID header's tenant.
+
+    For assumed identity tokens: returns the assumed user and sets the
+    assumed identity context for audit logging.
     """
     user_service = _get_user_service(user_repo, session)
-    payload, user = await _validate_access_token(authorization, user_service)
+    payload, user, assumed_identity_ctx = await _validate_access_token(authorization, user_service)
 
     # CRITICAL: Validate JWT tenant_id matches X-Tenant-ID header's tenant
     token_tenant_id = payload.get("tenant_id")
@@ -132,6 +194,9 @@ async def get_current_user(
             detail="User does not have access to this tenant",
         )
 
+    # Note: Assumed identity context is set by RequestContextMiddleware
+    # The operator superuser validation happens in _validate_access_token above
+
     # Bind user and tenant context to logs
     bind_user_context(user.id, tenant.id, user.email)
 
@@ -152,7 +217,7 @@ async def get_authenticated_user(
     Does NOT validate tenant membership - just validates the token and user exists.
     """
     user_service = _get_user_service(user_repo, session)
-    _, user = await _validate_access_token(authorization, user_service)
+    _, user, _ = await _validate_access_token(authorization, user_service)
     return user
 
 
@@ -213,3 +278,21 @@ async def require_superuser(
 
 
 SuperUser = Annotated[User, Depends(require_superuser)]
+
+
+def get_optional_assumed_identity_context() -> AssumedIdentityContext | None:
+    """Get the assumed identity context if present.
+
+    Use this dependency in routes that need to know if the current request
+    is from an assumed identity session, for example to display a warning
+    or to include additional context in responses.
+
+    Returns:
+        The AssumedIdentityContext if an identity assumption is active, None otherwise.
+    """
+    return get_assumed_identity_context()
+
+
+OptionalAssumedIdentityContext = Annotated[
+    AssumedIdentityContext | None, Depends(get_optional_assumed_identity_context)
+]

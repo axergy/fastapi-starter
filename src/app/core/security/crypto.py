@@ -110,3 +110,58 @@ def decode_token(token: str) -> dict[str, Any] | None:
         )
     except JWTError:
         return None
+
+
+# Default expiry for assumed identity tokens (shorter than regular access tokens)
+ASSUMED_IDENTITY_TOKEN_EXPIRE_MINUTES = 15
+
+
+def create_assumed_identity_token(
+    assumed_user_id: str | UUID,
+    operator_user_id: str | UUID,
+    tenant_id: str | UUID,
+    reason: str | None = None,
+    expires_delta: timedelta | None = None,
+) -> str:
+    """Create JWT token for an assumed identity session.
+
+    This token allows a superuser (operator) to act as another user (assumed).
+    The token structure is compatible with regular access tokens but includes
+    additional claims to identify the assumed identity session.
+
+    Args:
+        assumed_user_id: The user whose identity is being assumed (becomes 'sub')
+        operator_user_id: The superuser performing the assumption
+        tenant_id: Target tenant context for the session
+        reason: Optional reason for the assumption (for audit purposes)
+        expires_delta: Token expiry (defaults to 15 minutes)
+
+    Returns:
+        JWT token string
+    """
+    settings = get_settings()
+
+    # Shorter default expiry for assumed identity tokens (15 minutes)
+    if expires_delta:
+        expire = datetime.now(UTC) + expires_delta
+    else:
+        expire = datetime.now(UTC) + timedelta(minutes=ASSUMED_IDENTITY_TOKEN_EXPIRE_MINUTES)
+
+    started_at = datetime.now(UTC)
+
+    to_encode = {
+        "sub": str(assumed_user_id),
+        "tenant_id": str(tenant_id),
+        "exp": expire,
+        "type": "access",
+        "assumed_identity": {
+            "operator_user_id": str(operator_user_id),
+            "reason": reason,
+            "started_at": started_at.isoformat(),
+        },
+    }
+    return jwt.encode(  # type: ignore[no-any-return]
+        to_encode,
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )

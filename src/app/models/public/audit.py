@@ -37,6 +37,9 @@ class AuditAction(str, Enum):
     USER_UPDATE = "user.update"
     USER_EMAIL_VERIFY = "user.email_verify"
 
+    # Identity assumption
+    IDENTITY_ASSUMED = "identity.assumed"
+
 
 class AuditStatus(str, Enum):
     """Audit log status."""
@@ -65,6 +68,10 @@ class AuditLog(SQLModel, table=True):
     # Context
     tenant_id: UUID = Field(foreign_key="public.tenants.id", index=True)
     user_id: UUID | None = Field(foreign_key="public.users.id", index=True, default=None)
+
+    # Identity assumption tracking
+    # When a superuser assumes another user's identity, this field stores the superuser's ID
+    assumed_by_user_id: UUID | None = Field(foreign_key="public.users.id", index=True, default=None)
 
     # Action details
     action: str = Field(max_length=50)  # AuditAction value

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.core.audit_context import get_audit_context
+from src.app.api.context import get_assumed_identity_context, get_audit_context
 from src.app.core.logging import get_logger
 from src.app.models.public import AuditAction, AuditLog, AuditStatus
 from src.app.repositories.public import AuditLogRepository
@@ -43,6 +43,7 @@ class AuditService:
         """Record an audit log entry.
 
         Extracts request metadata from context (IP, user agent, request_id).
+        Automatically captures assumed identity context if present.
         Failures are logged but do not raise exceptions.
 
         Args:
@@ -64,10 +65,25 @@ class AuditService:
             user_agent = ctx.user_agent if ctx else None
             request_id = ctx.request_id if ctx else None
 
+            # Get assumed identity context (if any)
+            assumed_ctx = get_assumed_identity_context()
+            assumed_by_user_id = None
+
+            if assumed_ctx:
+                assumed_by_user_id = assumed_ctx.operator_user_id
+                # Enrich changes with assumed identity metadata
+                if changes is None:
+                    changes = {}
+                changes["_assumed_identity"] = {
+                    "operator_user_id": str(assumed_ctx.operator_user_id),
+                    "reason": assumed_ctx.reason,
+                }
+
             # Create audit log entry
             audit_log = AuditLog(
                 tenant_id=self.tenant_id,
                 user_id=user_id,
+                assumed_by_user_id=assumed_by_user_id,
                 action=action.value if isinstance(action, AuditAction) else action,
                 entity_type=entity_type,
                 entity_id=entity_id,
@@ -87,6 +103,7 @@ class AuditService:
                 action=audit_log.action,
                 entity_type=entity_type,
                 entity_id=str(entity_id) if entity_id else None,
+                assumed_by_user_id=str(assumed_by_user_id) if assumed_by_user_id else None,
             )
 
             return audit_log

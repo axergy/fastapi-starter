@@ -15,6 +15,11 @@ class AuditLogRead(BaseModel):
     id: UUID
     tenant_id: UUID
     user_id: UUID | None
+    assumed_by_user_id: UUID | None = Field(
+        default=None,
+        description="If action was performed during an assumed identity session, "
+        "this is the superuser who assumed the identity",
+    )
     action: str
     entity_type: str
     entity_id: UUID | None

@@ -5,9 +5,19 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from src.app.api.dependencies import AdminServiceDep, SuperUser, TenantServiceDep
+from src.app.api.dependencies import (
+    AdminServiceDep,
+    AssumeIdentityServiceDep,
+    AuditLogRepo,
+    DBSession,
+    SuperUser,
+    TenantServiceDep,
+)
+from src.app.models.public import AuditAction
+from src.app.schemas.assume_identity import AssumeIdentityRequest, AssumeIdentityResponse
 from src.app.schemas.pagination import PaginatedResponse
 from src.app.schemas.tenant import TenantRead
+from src.app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -160,3 +170,105 @@ async def bulk_delete_tenants(
         "count": len(workflow_ids),
         "workflow_ids": workflow_ids,
     }
+
+
+@router.post(
+    "/assume-identity",
+    response_model=AssumeIdentityResponse,
+    summary="Assume user identity",
+    description=(
+        "Start an assumed identity session as a target user in a specific tenant. "
+        "Returns a time-limited JWT token (15 minutes) that allows the superuser to "
+        "act as the target user. All actions performed with this token are audited "
+        "with both the actual operator and the assumed user identities."
+    ),
+    responses={
+        200: {
+            "description": "Assumed identity session started",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer",
+                        "expires_in": 900,
+                        "assumed_user_id": "550e8400-e29b-41d4-a716-446655440000",
+                        "assumed_user_email": "user@example.com",
+                        "tenant_id": "660e8400-e29b-41d4-a716-446655440000",
+                        "tenant_slug": "acme-corp",
+                    }
+                }
+            },
+        },
+        400: {
+            "description": "Invalid request",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "user_not_found": {"value": {"detail": "Target user not found"}},
+                        "user_inactive": {"value": {"detail": "Target user is inactive"}},
+                        "user_is_superuser": {
+                            "value": {"detail": "Cannot assume identity of another superuser"}
+                        },
+                        "tenant_not_found": {"value": {"detail": "Tenant not found"}},
+                        "no_membership": {
+                            "value": {"detail": "Target user does not have access to this tenant"}
+                        },
+                    }
+                }
+            },
+        },
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized (superuser required)"},
+    },
+)
+async def assume_identity(
+    request: AssumeIdentityRequest,
+    superuser: SuperUser,
+    assume_identity_service: AssumeIdentityServiceDep,
+    audit_repo: AuditLogRepo,
+    session: DBSession,
+) -> AssumeIdentityResponse:
+    """Assume a user's identity (superuser only).
+
+    Creates a time-limited access token that allows the superuser to act as the
+    target user in the specified tenant. The token has a shorter expiry (15 minutes)
+    than regular access tokens for security.
+
+    Security restrictions:
+    - Only superusers can assume identities
+    - Cannot assume the identity of another superuser
+    - Target user must have active membership in the specified tenant
+
+    Audit logging:
+    - The assumption start is logged with IDENTITY_ASSUMED action
+    - All actions performed with the assumed token include both user IDs in audit logs
+    """
+    try:
+        response = await assume_identity_service.assume_identity(
+            operator=superuser,
+            target_user_id=request.target_user_id,
+            tenant_id=request.tenant_id,
+            reason=request.reason,
+        )
+
+        # Log the assumption start
+        audit_service = AuditService(audit_repo, session, request.tenant_id)
+        await audit_service.log_action(
+            action=AuditAction.IDENTITY_ASSUMED,
+            entity_type="user",
+            entity_id=request.target_user_id,
+            user_id=superuser.id,
+            changes={
+                "assumed_user_id": str(request.target_user_id),
+                "tenant_id": str(request.tenant_id),
+                "reason": request.reason,
+                "expires_in_seconds": response.expires_in,
+            },
+        )
+
+        return response
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
