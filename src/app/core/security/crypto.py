@@ -28,6 +28,11 @@ def _create_password_hasher() -> argon2.PasswordHasher:
 
 _password_hasher = _create_password_hasher()
 
+# Pre-computed dummy hash for timing-safe password verification
+# Used when user doesn't exist to prevent timing attacks that reveal valid emails
+# This hash is intentionally invalid and will always fail verification
+DUMMY_PASSWORD_HASH = _password_hasher.hash("dummy_password_for_timing_safety")
+
 
 def hash_password(password: str) -> str:
     """Hash password using Argon2id."""
@@ -50,7 +55,10 @@ def create_access_token(
     tenant_id: str | UUID,
     expires_delta: timedelta | None = None,
 ) -> str:
-    """Create JWT access token."""
+    """Create JWT access token.
+
+    Includes a unique JWT ID (jti) to support token revocation if needed.
+    """
     settings = get_settings()
 
     if expires_delta:
@@ -63,6 +71,7 @@ def create_access_token(
         "tenant_id": str(tenant_id),
         "exp": expire,
         "type": "access",
+        "jti": str(uuid7()),  # Unique ID for token revocation support
     }
     return jwt.encode(  # type: ignore[no-any-return]
         to_encode,

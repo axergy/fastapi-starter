@@ -83,12 +83,17 @@ def bind_user_context(user_id: UUID, tenant_id: UUID, email: str | None = None) 
         user_id: The authenticated user's ID.
         tenant_id: The tenant ID from the request context.
         email: Optional user email for additional context.
+               Only logged if settings.log_user_emails is True (GDPR compliance).
     """
+    from src.app.core.config import get_settings
+
     bind_contextvars(
         user_id=str(user_id),
         tenant_id=str(tenant_id),
     )
-    if email:
+    # Only log email if explicitly enabled (GDPR compliance)
+    settings = get_settings()
+    if email and settings.log_user_emails:
         bind_contextvars(user_email=email)
 
 

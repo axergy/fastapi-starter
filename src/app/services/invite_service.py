@@ -172,8 +172,9 @@ class InviteService:
                 raise ValueError("Tenant is no longer available")
 
             # Create new user (email verified since they received invite)
+            # Normalize email to lowercase to prevent case-sensitivity issues
             user = User(
-                email=email,
+                email=email.lower().strip(),
                 hashed_password=hash_password(password),
                 full_name=full_name,
                 email_verified=True,

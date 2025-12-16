@@ -1,6 +1,8 @@
 """Email client using Resend API."""
 
 import html
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 import resend
 
@@ -8,6 +10,9 @@ from src.app.core.config import get_settings
 from src.app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Thread pool for email sending with timeout support
+_email_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="email_sender")
 
 # Shared email styles
 _BODY_STYLE = (
@@ -47,7 +52,7 @@ def send_verification_email(to: str, token: str, user_name: str) -> bool:
 
     resend.api_key = settings.resend_api_key
 
-    try:
+    def _send() -> None:
         resend.Emails.send(
             {
                 "from": settings.email_from,
@@ -56,8 +61,16 @@ def send_verification_email(to: str, token: str, user_name: str) -> bool:
                 "html": _get_verification_email_html(user_name, verification_url),
             }
         )
+
+    try:
+        # Use thread pool with timeout to prevent hanging on slow API responses
+        future = _email_executor.submit(_send)
+        future.result(timeout=settings.email_send_timeout_seconds)
         logger.info("Verification email sent", to=to)
         return True
+    except FuturesTimeoutError:
+        logger.error("Email send timed out", to=to, timeout=settings.email_send_timeout_seconds)
+        return False
     except Exception as e:
         logger.error("Failed to send verification email", to=to, error=str(e))
         return False
@@ -81,7 +94,7 @@ def send_welcome_email(to: str, user_name: str) -> bool:
 
     resend.api_key = settings.resend_api_key
 
-    try:
+    def _send() -> None:
         resend.Emails.send(
             {
                 "from": settings.email_from,
@@ -90,8 +103,15 @@ def send_welcome_email(to: str, user_name: str) -> bool:
                 "html": _get_welcome_email_html(user_name, settings.app_name),
             }
         )
+
+    try:
+        future = _email_executor.submit(_send)
+        future.result(timeout=settings.email_send_timeout_seconds)
         logger.info("Welcome email sent", to=to)
         return True
+    except FuturesTimeoutError:
+        logger.error("Email send timed out", to=to, timeout=settings.email_send_timeout_seconds)
+        return False
     except Exception as e:
         logger.error("Failed to send welcome email", to=to, error=str(e))
         return False
@@ -173,7 +193,7 @@ def send_invite_email(to: str, token: str, tenant_name: str, inviter_name: str) 
 
     resend.api_key = settings.resend_api_key
 
-    try:
+    def _send() -> None:
         resend.Emails.send(
             {
                 "from": settings.email_from,
@@ -182,8 +202,15 @@ def send_invite_email(to: str, token: str, tenant_name: str, inviter_name: str) 
                 "html": _get_invite_email_html(tenant_name, inviter_name, invite_url),
             }
         )
+
+    try:
+        future = _email_executor.submit(_send)
+        future.result(timeout=settings.email_send_timeout_seconds)
         logger.info("Invite email sent", to=to)
         return True
+    except FuturesTimeoutError:
+        logger.error("Email send timed out", to=to, timeout=settings.email_send_timeout_seconds)
+        return False
     except Exception as e:
         logger.error("Failed to send invite email", to=to, error=str(e))
         return False

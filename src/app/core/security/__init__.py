@@ -5,6 +5,7 @@ Re-exports all security-related functions for convenience.
 
 from src.app.core.security.crypto import (
     ASSUMED_IDENTITY_TOKEN_EXPIRE_MINUTES,
+    DUMMY_PASSWORD_HASH,
     create_access_token,
     create_assumed_identity_token,
     create_refresh_token,
@@ -18,6 +19,7 @@ from src.app.core.security.validators import validate_schema_name
 __all__ = [
     # Crypto
     "ASSUMED_IDENTITY_TOKEN_EXPIRE_MINUTES",
+    "DUMMY_PASSWORD_HASH",
     "create_access_token",
     "create_assumed_identity_token",
     "create_refresh_token",

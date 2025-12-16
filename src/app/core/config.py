@@ -1,6 +1,7 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 
-from pydantic import field_validator
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,13 @@ class Settings(BaseSettings):
     app_env: str = "development"  # development, testing, production
     debug: bool = False
     enable_openapi: bool = True  # Set to False in production
+
+    # Security
+    log_user_emails: bool = False  # Set to False in production for GDPR compliance
+    trusted_proxy_ips: list[str] = []  # List of trusted proxy IPs for X-Forwarded-For
+    allowed_app_url_domains: list[str] = ["localhost", "127.0.0.1"]  # Allowed domains for APP_URL
+    # CSP for production (no unsafe-inline, no external CDN) - set to empty string to use default
+    csp_production: str = "default-src 'self'; frame-ancestors 'none'"
 
     # Database
     database_url: str
@@ -47,6 +55,35 @@ class Settings(BaseSettings):
             raise ValueError("JWT_SECRET_KEY must be at least 32 characters")
         return v
 
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, v: list[str]) -> list[str]:
+        """Validate CORS origins - reject wildcards when credentials are used."""
+        for origin in v:
+            if origin == "*":
+                raise ValueError(
+                    "CORS wildcard '*' is not allowed when allow_credentials=True. "
+                    "Specify explicit origins instead."
+                )
+        return v
+
+    @field_validator("app_url")
+    @classmethod
+    def validate_app_url(cls, v: str, info: ValidationInfo) -> str:
+        """Validate APP_URL is from allowed domain list to prevent SSRF in emails."""
+        # Get allowed domains from values or use default
+        allowed = info.data.get("allowed_app_url_domains", ["localhost", "127.0.0.1"])
+        parsed = urlparse(v)
+        hostname = parsed.hostname or ""
+
+        # Check if hostname matches any allowed domain
+        if not any(hostname == domain or hostname.endswith(f".{domain}") for domain in allowed):
+            raise ValueError(
+                f"APP_URL domain '{hostname}' not in allowed list. "
+                f"Add it to ALLOWED_APP_URL_DOMAINS or use: {allowed}"
+            )
+        return v
+
     # Temporal
     temporal_host: str = "localhost:7233"
     temporal_namespace: str = "default"
@@ -62,6 +99,7 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None  # If not set, emails are logged but not sent
     email_from: str = "noreply@example.com"
     email_verification_expire_hours: int = 24
+    email_send_timeout_seconds: int = 10  # Timeout for email API calls
     app_url: str = "http://localhost:3000"  # Frontend URL for verification links
 
     # Invites

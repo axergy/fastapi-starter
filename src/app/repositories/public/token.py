@@ -35,17 +35,25 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
         return result.scalar_one_or_none()
 
     async def get_valid_by_hash_and_tenant(
-        self, token_hash: str, tenant_id: UUID
+        self, token_hash: str, tenant_id: UUID, for_update: bool = False
     ) -> RefreshToken | None:
-        """Get a valid refresh token by hash, scoped to tenant."""
-        result = await self.session.execute(
-            select(RefreshToken).where(
-                RefreshToken.token_hash == token_hash,
-                RefreshToken.tenant_id == tenant_id,
-                RefreshToken.revoked == False,  # noqa: E712
-                RefreshToken.expires_at > utc_now(),
-            )
+        """Get a valid refresh token by hash, scoped to tenant.
+
+        Args:
+            token_hash: The hashed token to look up
+            tenant_id: The tenant ID to scope the search
+            for_update: If True, locks the row to prevent TOCTOU race conditions
+                       during token refresh operations
+        """
+        query = select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.tenant_id == tenant_id,
+            RefreshToken.revoked == False,  # noqa: E712
+            RefreshToken.expires_at > utc_now(),
         )
+        if for_update:
+            query = query.with_for_update()
+        result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
     async def get_active_hashes_for_user(self, user_id: UUID, tenant_id: UUID) -> list[str]:

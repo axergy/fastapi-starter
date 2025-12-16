@@ -9,6 +9,7 @@ from src.app.core.cache import blacklist_token, blacklist_tokens, is_token_black
 from src.app.core.config import get_settings
 from src.app.core.logging import get_logger
 from src.app.core.security import (
+    DUMMY_PASSWORD_HASH,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -71,11 +72,18 @@ class AuthService:
         try:
             # 1. Get user from public schema
             user = await self.user_repo.get_by_email(email)
+
+            # 2. Verify password with constant-time comparison
+            # Always perform password verification to prevent timing attacks
+            # that could reveal whether an email exists in the system
+            password_hash = user.hashed_password if user else DUMMY_PASSWORD_HASH
+            password_valid = verify_password(password, password_hash)
+
+            # Return None for non-existent users AFTER password check for timing safety
             if user is None:
                 return None
 
-            # 2. Verify password
-            if not verify_password(password, user.hashed_password):
+            if not password_valid:
                 return None
 
             # 3. Check user is active
@@ -155,7 +163,11 @@ class AuthService:
             return None  # Token is definitely revoked
 
         # If blacklisted is None (Redis unavailable) or False, verify in database
-        db_token = await self.token_repo.get_valid_by_hash_and_tenant(token_hash, self.tenant_id)
+        # Use FOR UPDATE to prevent TOCTOU race condition where multiple parallel
+        # requests could all validate successfully before any of them revoke
+        db_token = await self.token_repo.get_valid_by_hash_and_tenant(
+            token_hash, self.tenant_id, for_update=True
+        )
 
         if db_token is None:
             return None
@@ -165,9 +177,8 @@ class AuthService:
             return None
 
         try:
-            # ATOMIC OPERATION: Revoke old token BEFORE issuing new ones
-            # This prevents TOCTOU race condition where multiple parallel requests
-            # could all validate successfully before any of them revoke
+            # Revoke old token BEFORE issuing new ones
+            # The FOR UPDATE lock ensures only one request can proceed
             db_token.revoked = True
 
             # Create new refresh token with rotation

@@ -44,8 +44,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
                 }
             },
         },
-        401: {"description": "Invalid credentials"},
-        403: {"description": "Email not verified or user not member of tenant"},
+        401: {"description": "Invalid credentials (generic error to prevent enumeration)"},
     },
 )
 @limiter.limit("5/minute")
@@ -63,17 +62,17 @@ async def login(
     try:
         result = await service.authenticate(login_data.email, login_data.password)
     except ValueError as e:
-        if str(e) == "Email not verified":
-            await audit_service.log_failure(
-                action=AuditAction.USER_LOGIN,
-                entity_type="user",
-                error_message="Email not verified",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Email not verified. Please check your email for verification link.",
-            ) from e
-        raise
+        # Log specific error server-side but return generic error to client
+        # This prevents email enumeration via different error messages
+        await audit_service.log_failure(
+            action=AuditAction.USER_LOGIN,
+            entity_type="user",
+            error_message=str(e),  # Log real error server-side
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",  # Generic error to client
+        ) from e
 
     if result is None:
         await audit_service.log_failure(
@@ -83,7 +82,7 @@ async def login(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials or no access to tenant",
+            detail="Invalid credentials",  # Generic error to client
         )
 
     # Log successful login (user_id is in the JWT, but we don't have it here easily)
@@ -242,8 +241,10 @@ async def logout(
             },
         },
         400: {"description": "Invalid or expired token"},
+        429: {"description": "Too many verification attempts"},
     },
 )
+@limiter.limit("5/minute")
 async def verify_email(
     request: Request,
     verify_data: VerifyEmailRequest,

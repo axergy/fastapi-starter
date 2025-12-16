@@ -69,10 +69,40 @@ def test_bind_request_context_with_none(capturing_logger):
 
 
 def test_bind_user_context(capturing_logger):
-    """Test binding user and tenant context to logs."""
+    """Test binding user and tenant context to logs.
+
+    Note: Email is only logged when log_user_emails=True (GDPR compliance).
+    """
     user_id = uuid7()
     tenant_id = uuid7()
     email = "test@example.com"
+
+    bind_user_context(user_id, tenant_id, email)
+    logger = structlog.get_logger()
+    logger.info("test message")
+
+    entries = capturing_logger.calls
+    assert len(entries) == 1
+    assert entries[0].kwargs["user_id"] == str(user_id)
+    assert entries[0].kwargs["tenant_id"] == str(tenant_id)
+    # Email is NOT logged by default (GDPR compliance - log_user_emails=False)
+    assert "user_email" not in entries[0].kwargs
+
+
+def test_bind_user_context_with_email_logging_enabled(capturing_logger, monkeypatch):
+    """Test binding user context with email logging enabled."""
+    from unittest.mock import MagicMock
+
+    from src.app.core import config
+
+    user_id = uuid7()
+    tenant_id = uuid7()
+    email = "test@example.com"
+
+    # Mock settings to enable email logging
+    mock_settings = MagicMock()
+    mock_settings.log_user_emails = True
+    monkeypatch.setattr(config, "get_settings", lambda: mock_settings)
 
     bind_user_context(user_id, tenant_id, email)
     logger = structlog.get_logger()

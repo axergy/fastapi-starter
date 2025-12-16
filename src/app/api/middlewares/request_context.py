@@ -78,14 +78,24 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        from src.app.core.config import get_settings
+
         # Clear any stale context
         clear_audit_context()
         clear_assumed_identity_context()
 
         try:
-            # Set audit context
-            forwarded_for = request.headers.get("x-forwarded-for")
+            settings = get_settings()
+
+            # Get client IP, only trust X-Forwarded-For from trusted proxies
             client_host = request.client.host if request.client else None
+            forwarded_for = request.headers.get("x-forwarded-for")
+
+            # Only trust X-Forwarded-For if request comes from trusted proxy
+            if settings.trusted_proxy_ips and client_host not in settings.trusted_proxy_ips:
+                # Not from trusted proxy, ignore X-Forwarded-For header
+                forwarded_for = None
+
             ip_address = get_client_ip(forwarded_for, client_host)
 
             set_audit_context(

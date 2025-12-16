@@ -41,7 +41,11 @@ def setup_middlewares(app: FastAPI, settings: Settings) -> None:
     )
 
     # Security headers (Helmet-style)
-    app.add_middleware(SecurityHeadersMiddleware)
+    # Use stricter CSP in production when OpenAPI docs are disabled
+    csp = None  # Use default (development CSP with unsafe-inline for Swagger)
+    if not settings.enable_openapi and settings.csp_production:
+        csp = settings.csp_production
+    app.add_middleware(SecurityHeadersMiddleware, content_security_policy=csp)
 
     # Logging context - binds request_id to structlog context
     @app.middleware("http")

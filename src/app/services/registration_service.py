@@ -51,8 +51,9 @@ class RegistrationService:
         Raises ValueError if email already exists or IntegrityError on commit.
         """
         # Create user in public schema
+        # Normalize email to lowercase to prevent case-sensitivity issues
         user = User(
-            email=email,
+            email=email.lower().strip(),
             hashed_password=hash_password(password),
             full_name=full_name,
         )
