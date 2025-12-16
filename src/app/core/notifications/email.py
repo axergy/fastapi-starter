@@ -1,5 +1,7 @@
 """Email client using Resend API."""
 
+import html
+
 import resend
 
 from src.app.core.config import get_settings
@@ -39,7 +41,7 @@ def send_verification_email(to: str, token: str, user_name: str) -> bool:
         logger.warning(
             "RESEND_API_KEY not set - email not sent",
             to=to,
-            verification_url=verification_url,
+            email_type="verification",
         )
         return True
 
@@ -97,6 +99,7 @@ def send_welcome_email(to: str, user_name: str) -> bool:
 
 def _get_verification_email_html(user_name: str, verification_url: str) -> str:
     """Generate HTML content for verification email."""
+    safe_user_name = html.escape(user_name)
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -105,7 +108,7 @@ def _get_verification_email_html(user_name: str, verification_url: str) -> str:
 </head>
 <body style="{_BODY_STYLE}">
     <h1 style="color: #2563eb; margin-bottom: 24px;">Verify your email</h1>
-    <p>Hi {user_name},</p>
+    <p>Hi {safe_user_name},</p>
     <p>Thanks for signing up! Please verify your email address by clicking below:</p>
     <p style="margin: 32px 0;">
         <a href="{verification_url}" style="{_BUTTON_STYLE}">Verify Email</a>
@@ -124,6 +127,7 @@ def _get_verification_email_html(user_name: str, verification_url: str) -> str:
 
 def _get_welcome_email_html(user_name: str, app_name: str) -> str:
     """Generate HTML content for welcome email."""
+    safe_user_name = html.escape(user_name)
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -132,7 +136,7 @@ def _get_welcome_email_html(user_name: str, app_name: str) -> str:
 </head>
 <body style="{_BODY_STYLE}">
     <h1 style="color: #2563eb; margin-bottom: 24px;">Welcome to {app_name}!</h1>
-    <p>Hi {user_name},</p>
+    <p>Hi {safe_user_name},</p>
     <p>Your email has been verified and your account is now active.</p>
     <p>You're all set to start using {app_name}. If you have any questions,
     feel free to reach out to our support team.</p>
@@ -163,7 +167,7 @@ def send_invite_email(to: str, token: str, tenant_name: str, inviter_name: str) 
         logger.warning(
             "RESEND_API_KEY not set - invite email not sent",
             to=to,
-            invite_url=invite_url,
+            email_type="invite",
         )
         return True
 
@@ -187,6 +191,8 @@ def send_invite_email(to: str, token: str, tenant_name: str, inviter_name: str) 
 
 def _get_invite_email_html(tenant_name: str, inviter_name: str, invite_url: str) -> str:
     """Generate HTML content for invite email."""
+    safe_tenant_name = html.escape(tenant_name)
+    safe_inviter_name = html.escape(inviter_name)
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -195,7 +201,7 @@ def _get_invite_email_html(tenant_name: str, inviter_name: str, invite_url: str)
 </head>
 <body style="{_BODY_STYLE}">
     <h1 style="color: #2563eb; margin-bottom: 24px;">You're invited!</h1>
-    <p>{inviter_name} has invited you to join <strong>{tenant_name}</strong>.</p>
+    <p>{safe_inviter_name} has invited you to join <strong>{safe_tenant_name}</strong>.</p>
     <p>Click the button below to accept the invitation:</p>
     <p style="margin: 32px 0;">
         <a href="{invite_url}" style="{_BUTTON_STYLE}">Accept Invitation</a>

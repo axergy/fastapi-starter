@@ -153,7 +153,7 @@ def create_assumed_identity_token(
         "sub": str(assumed_user_id),
         "tenant_id": str(tenant_id),
         "exp": expire,
-        "type": "access",
+        "type": "assumed_access",
         "assumed_identity": {
             "operator_user_id": str(operator_user_id),
             "reason": reason,

@@ -15,11 +15,13 @@ class Settings(BaseSettings):
     app_name: str = "FastAPI SaaS Starter"
     app_env: str = "development"  # development, testing, production
     debug: bool = False
+    enable_openapi: bool = True  # Set to False in production
 
     # Database
     database_url: str
     database_pool_size: int = 5
     database_max_overflow: int = 10
+    database_ssl_mode: str = "prefer"  # disable, prefer, require, verify-ca, verify-full
 
     # Shutdown
     shutdown_grace_period: int = 30

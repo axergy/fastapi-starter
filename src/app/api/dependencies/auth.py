@@ -48,10 +48,19 @@ async def _validate_access_token(
             detail="Invalid or expired token",
         )
 
-    if payload.get("type") != TokenType.ACCESS:
+    # Accept both regular access tokens and assumed identity tokens
+    token_type = payload.get("type")
+    if token_type not in (TokenType.ACCESS, TokenType.ASSUMED_ACCESS):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type",
+        )
+
+    # If it's an assumed_access token, it MUST have assumed_identity claims
+    if token_type == TokenType.ASSUMED_ACCESS and not payload.get("assumed_identity"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid assumed identity token",
         )
 
     user_id = payload.get("sub")

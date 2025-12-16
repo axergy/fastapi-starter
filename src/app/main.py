@@ -64,12 +64,20 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
 
+    # Conditionally enable OpenAPI documentation
+    docs_url = "/docs" if settings.enable_openapi else None
+    redoc_url = "/redoc" if settings.enable_openapi else None
+    openapi_url = "/openapi.json" if settings.enable_openapi else None
+
     app = FastAPI(
         title=settings.app_name,
         description="Multi-tenant SaaS API with Temporal workflows",
         version="0.1.0",
         openapi_tags=OPENAPI_TAGS,
         lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
     )
 
     # Rate limiting

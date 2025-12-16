@@ -31,6 +31,7 @@ class TokenType:
 
     ACCESS = "access"
     REFRESH = "refresh"
+    ASSUMED_ACCESS = "assumed_access"
 
 
 class AuthService:

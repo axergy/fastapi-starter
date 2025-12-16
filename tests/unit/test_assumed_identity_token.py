@@ -36,7 +36,7 @@ class TestCreateAssumedIdentityToken:
         # Standard access token fields
         assert payload["sub"] == str(assumed_id)
         assert payload["tenant_id"] == str(tenant_id)
-        assert payload["type"] == "access"
+        assert payload["type"] == "assumed_access"
         assert "exp" in payload
 
         # Assumed identity claims
@@ -135,8 +135,8 @@ class TestCreateAssumedIdentityToken:
         parsed = datetime.fromisoformat(started_at)
         assert parsed is not None
 
-    def test_token_type_is_access(self):
-        """Token type should be 'access' for compatibility with existing auth."""
+    def test_token_type_is_assumed_access(self):
+        """Token type should be 'assumed_access' for distinct tracking."""
         token = create_assumed_identity_token(
             assumed_user_id=uuid4(),
             operator_user_id=uuid4(),
@@ -145,7 +145,7 @@ class TestCreateAssumedIdentityToken:
 
         payload = decode_token(token)
         assert payload is not None
-        assert payload["type"] == "access"
+        assert payload["type"] == "assumed_access"
 
     def test_accepts_string_uuids(self):
         """Should accept both UUID objects and string UUIDs."""
