@@ -23,6 +23,21 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_hash_and_tenant(self, token_hash: str, tenant_id: UUID) -> RefreshToken | None:
+        """Get refresh token by hash, scoped to tenant.
+
+        Args:
+            token_hash: The hashed token to look up
+            tenant_id: The tenant ID to scope the search
+        """
+        result = await self.session.execute(
+            select(RefreshToken).where(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.tenant_id == tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_valid_by_hash(self, token_hash: str) -> RefreshToken | None:
         """Get a valid (non-revoked, non-expired) refresh token by hash."""
         result = await self.session.execute(
@@ -63,6 +78,23 @@ class RefreshTokenRepository(BaseRepository[RefreshToken]):
         """
         result = await self.session.execute(
             select(RefreshToken.token_hash).where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.tenant_id == tenant_id,
+                RefreshToken.revoked == False,  # noqa: E712
+                RefreshToken.expires_at > utc_now(),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_active_tokens_for_user(
+        self, user_id: UUID, tenant_id: UUID
+    ) -> list[RefreshToken]:
+        """Get all active tokens of a user in a tenant with full token data.
+
+        Used for bulk blacklisting in Redis cache with proper TTLs.
+        """
+        result = await self.session.execute(
+            select(RefreshToken).where(
                 RefreshToken.user_id == user_id,
                 RefreshToken.tenant_id == tenant_id,
                 RefreshToken.revoked == False,  # noqa: E712

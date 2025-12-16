@@ -116,7 +116,8 @@ class AuditService:
                 entity_type=entity_type,
                 error=str(e),
             )
-            # Rollback to clean up the failed transaction
+            # Rollback the isolated session to clean up the failed transaction
+            # This won't affect business logic transactions (different session)
             with contextlib.suppress(Exception):
                 await self.session.rollback()
             return None

@@ -32,7 +32,10 @@ async def get_tenant_session(
             quoted_schema = await connection.scalar(
                 text("SELECT quote_ident(:schema)").bindparams(schema=tenant_schema)
             )
-            await connection.execute(text(f"SET search_path TO {quoted_schema}, public"))
+            # Set search_path to ONLY the tenant schema for strict isolation
+            # Public schema tables must be explicitly qualified (public.users, etc.)
+            # This prevents accidental data leakage if tenant tables are missing
+            await connection.execute(text(f"SET search_path TO {quoted_schema}"))
             await connection.commit()
 
             session_factory = async_sessionmaker(

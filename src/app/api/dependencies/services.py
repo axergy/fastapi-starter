@@ -116,10 +116,13 @@ def get_admin_service(
 async def get_audit_service(
     tenant: ValidatedTenant,
 ) -> AsyncGenerator[AuditService]:
-    """Get audit service with its own isolated session."""
+    """Get audit service with its own isolated session.
+
+    Uses a dedicated session that commits independently from business transactions.
+    This ensures audit logs are preserved even if the main transaction rolls back.
+    """
     engine = get_engine()
-    # Create a dedicated session for auditing (commits independently)
-    async with AsyncSession(engine) as session:
+    async with AsyncSession(engine, expire_on_commit=False) as session:
         repo = AuditLogRepository(session)
         yield AuditService(repo, session, tenant.id)
 

@@ -11,6 +11,7 @@ import asyncio
 from dataclasses import dataclass
 from uuid import UUID
 
+from psycopg2.errors import UniqueViolation  # type: ignore[import-untyped]
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
@@ -368,7 +369,11 @@ def _sync_create_membership(user_id: str, tenant_id: str, role: str) -> bool:
             session.commit()
         except IntegrityError as e:
             session.rollback()
-            raise RuntimeError(f"Failed to create membership (FK violation): {e}") from e
+            # Unique violation means membership already exists - idempotent success
+            if isinstance(e.orig, UniqueViolation):
+                return True
+            # FK violation or other error - real failure
+            raise RuntimeError(f"Failed to create membership: {e}") from e
 
         return True
 
@@ -378,28 +383,38 @@ async def create_admin_membership(input: CreateMembershipInput) -> bool:
     """
     Create user-tenant membership.
 
-    Idempotency: Uses check-then-act pattern - queries for existing membership
-    before attempting to create. If membership already exists (from a previous
-    execution), returns True without creating a duplicate.
+    Idempotency: Uses check-then-act pattern with race condition handling.
+    First queries for existing membership before attempting to create. If
+    membership already exists (from a previous execution), returns True
+    without creating a duplicate.
 
-    The database also has a unique constraint on (user_id, tenant_id) as a
-    safety net, so even if the check race-conditions, the IntegrityError is
-    caught and handled.
+    The database has a unique constraint on (user_id, tenant_id) as a safety
+    net for race conditions. If two concurrent executions both pass the check,
+    one will succeed with the INSERT and the other will get a UniqueViolation.
+    The UniqueViolation is caught and treated as success (membership exists),
+    making the operation fully idempotent.
 
     Pattern:
         1. Check if membership exists
         2. If exists, return success (idempotent retry)
         3. If not exists, create membership
-        4. On IntegrityError (race condition), rollback and raise error
+        4. On UniqueViolation (race condition), return success (idempotent)
+        5. On ForeignKeyViolation or other error, raise RuntimeError
 
     This makes the activity safe to retry - subsequent calls after successful
-    creation will see the existing membership and return immediately.
+    creation will see the existing membership and return immediately. Concurrent
+    calls are also handled correctly through unique constraint violation
+    detection.
 
     Args:
         input: CreateMembershipInput with user_id, tenant_id, and role
 
     Returns:
         True if membership was created or already exists
+
+    Raises:
+        RuntimeError: If foreign key constraint fails (user/tenant doesn't exist)
+            or other database errors occur
     """
     activity.logger.info(
         f"Creating membership for user {input.user_id} in tenant {input.tenant_id}"

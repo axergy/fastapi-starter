@@ -5,8 +5,11 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.core.cache import blacklist_token, blacklist_tokens, is_token_blacklisted
-from src.app.core.config import get_settings
+from src.app.core.cache import (
+    blacklist_token,
+    blacklist_tokens_with_ttls,
+    is_token_blacklisted,
+)
 from src.app.core.logging import get_logger
 from src.app.core.security import (
     DUMMY_PASSWORD_HASH,
@@ -16,6 +19,7 @@ from src.app.core.security import (
     hash_token,
     verify_password,
 )
+from src.app.models.base import utc_now
 from src.app.models.public import RefreshToken
 from src.app.repositories import (
     MembershipRepository,
@@ -200,9 +204,10 @@ class AuthService:
             # Blacklist old token in Redis AFTER successful commit
             # Redis is just a cache for fast rejection; DB remains authoritative
             try:
-                settings = get_settings()
-                ttl = settings.refresh_token_expire_days * 86400  # days to seconds
-                await blacklist_token(token_hash, ttl)
+                # Calculate remaining TTL from actual token expiry time
+                remaining_ttl = max(0, int((db_token.expires_at - utc_now()).total_seconds()))
+                if remaining_ttl > 0:
+                    await blacklist_token(token_hash, remaining_ttl)
             except Exception as e:
                 # Log but don't fail - DB is already committed and authoritative
                 # Token will still be rejected on DB lookup even if Redis fails
@@ -224,7 +229,7 @@ class AuthService:
         """
         try:
             token_hash = hash_token(refresh_token)
-            db_token = await self.token_repo.get_by_hash(token_hash)
+            db_token = await self.token_repo.get_by_hash_and_tenant(token_hash, self.tenant_id)
 
             if db_token is None:
                 return False
@@ -240,9 +245,10 @@ class AuthService:
             # Add to Redis blacklist AFTER successful commit
             # Redis is just a cache; DB remains authoritative
             try:
-                settings = get_settings()
-                ttl = settings.refresh_token_expire_days * 86400  # days to seconds
-                await blacklist_token(token_hash, ttl)
+                # Calculate remaining TTL from actual token expiry time
+                remaining_ttl = max(0, int((db_token.expires_at - utc_now()).total_seconds()))
+                if remaining_ttl > 0:
+                    await blacklist_token(token_hash, remaining_ttl)
             except Exception as e:
                 # Log but don't fail - DB is already committed and authoritative
                 logger.warning("Failed to blacklist token in Redis", error=str(e))
@@ -266,8 +272,8 @@ class AuthService:
         Returns the number of tokens revoked.
         """
         try:
-            # Get token hashes before revoking (for Redis blacklist)
-            token_hashes = await self.token_repo.get_active_hashes_for_user(user_id, self.tenant_id)
+            # Get tokens with expiry times before revoking (for Redis blacklist with proper TTLs)
+            tokens = await self.token_repo.get_active_tokens_for_user(user_id, self.tenant_id)
 
             # Update database first (source of truth)
             count = await self.token_repo.revoke_all_for_user(user_id, self.tenant_id)
@@ -275,17 +281,21 @@ class AuthService:
 
             # Bulk blacklist in Redis AFTER successful commit
             # Redis is just a cache; DB remains authoritative
-            if token_hashes:
+            if tokens:
                 try:
-                    settings = get_settings()
-                    ttl = settings.refresh_token_expire_days * 86400  # days to seconds
-                    await blacklist_tokens(token_hashes, ttl)
+                    # Calculate remaining TTL for each token
+                    now = utc_now()
+                    tokens_with_ttls = [
+                        (token.token_hash, max(0, int((token.expires_at - now).total_seconds())))
+                        for token in tokens
+                    ]
+                    await blacklist_tokens_with_ttls(tokens_with_ttls)
                 except Exception as e:
                     # Log but don't fail - DB is already committed and authoritative
                     logger.warning(
                         "Failed to blacklist tokens in Redis",
                         error=str(e),
-                        token_count=len(token_hashes),
+                        token_count=len(tokens),
                     )
 
             return count

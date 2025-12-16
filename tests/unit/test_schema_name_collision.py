@@ -64,7 +64,8 @@ class TestSlugLengthValidation:
                 tenant_name="Test Tenant",
                 tenant_slug="Invalid-Slug!",
             )
-        assert "lowercase letters, numbers, and underscores" in str(exc_info.value)
+        # Updated error message after stricter validation
+        assert "Slug must start with a letter" in str(exc_info.value)
 
 
 class TestSchemaNameValidation:
