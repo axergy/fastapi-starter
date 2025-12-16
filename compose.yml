@@ -9,11 +9,14 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/app
       - JWT_SECRET_KEY=dev-secret-key-change-in-production
       - TEMPORAL_HOST=temporal:7233
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
       temporal:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   worker:
     build:
@@ -23,11 +26,14 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/app
       - JWT_SECRET_KEY=dev-secret-key-change-in-production
       - TEMPORAL_HOST=temporal:7233
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
       temporal:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   db:
     image: postgres:16-alpine
@@ -76,6 +82,19 @@ services:
     depends_on:
       - temporal
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
 volumes:
   postgres_data:
   temporal_data:
+  redis_data:
