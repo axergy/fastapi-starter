@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import ValidationInfo, field_validator
@@ -27,9 +28,17 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str
+    # Optional separate database URL for migrations with elevated privileges (DDL operations).
+    # When set, Alembic uses this URL instead of database_url, allowing separation of
+    # runtime (DML) and migration (DDL) database roles for principle of least privilege.
+    database_migrations_url: str | None = None
     database_pool_size: int = 5
     database_max_overflow: int = 10
     database_ssl_mode: str = "prefer"  # disable, prefer, require, verify-ca, verify-full
+    # Disable statement cache to prevent cross-tenant prepared statement reuse.
+    # When using search_path switching with connection pooling, cached prepared statements
+    # could be reused across tenants, causing data leakage and security bypass.
+    database_statement_cache_size: int = 0
 
     # Shutdown
     shutdown_grace_period: int = 30
@@ -116,6 +125,10 @@ class Settings(BaseSettings):
     # Rate Limiting (global middleware - DoS protection)
     global_rate_limit_per_second: int = 10  # Max requests/second per IP
     global_rate_limit_burst: int = 20  # Token bucket burst capacity
+
+    # Audit logging configuration
+    audit_mode: Literal["sync", "async", "sampled"] = "sync"  # Currently only sync is implemented
+    audit_sample_rate: float = 1.0  # For sampled mode: 0.0-1.0
 
 
 @lru_cache

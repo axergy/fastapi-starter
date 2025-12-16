@@ -77,14 +77,14 @@ class TestGetRateLimitKey:
 
         assert key == "192.168.1.100"
 
-    def test_returns_ip_and_tenant_when_header_present(self, mock_request: MagicMock) -> None:
-        """When X-Tenant-ID header is present, returns IP:tenant format."""
+    def test_returns_ip_only_when_tenant_header_present(self, mock_request: MagicMock) -> None:
+        """When X-Tenant-ID header is present, returns IP only (header ignored for security)."""
         mock_request.headers = {"X-Tenant-ID": "acme-corp"}
 
         with patch("src.app.core.rate_limit.get_remote_address", return_value="192.168.1.100"):
             key = get_rate_limit_key(mock_request)
 
-        assert key == "192.168.1.100:acme-corp"
+        assert key == "192.168.1.100"
 
     def test_returns_unknown_when_ip_not_available(self, mock_request: MagicMock) -> None:
         """When IP cannot be determined, uses 'unknown' as fallback."""
@@ -95,16 +95,16 @@ class TestGetRateLimitKey:
 
         assert key == "unknown"
 
-    def test_returns_unknown_with_tenant_when_ip_not_available(
+    def test_returns_unknown_when_ip_not_available_with_tenant(
         self, mock_request: MagicMock
     ) -> None:
-        """When IP unavailable but tenant present, uses unknown:tenant."""
+        """When IP unavailable and tenant present, still returns 'unknown' (tenant ignored)."""
         mock_request.headers = {"X-Tenant-ID": "acme-corp"}
 
         with patch("src.app.core.rate_limit.get_remote_address", return_value=None):
             key = get_rate_limit_key(mock_request)
 
-        assert key == "unknown:acme-corp"
+        assert key == "unknown"
 
     def test_empty_tenant_header_returns_ip_only(self, mock_request: MagicMock) -> None:
         """When X-Tenant-ID is empty string, returns just IP."""

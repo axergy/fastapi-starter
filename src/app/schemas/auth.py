@@ -38,7 +38,14 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=100)
     tenant_name: str = Field(min_length=1, max_length=100)
     # Max 56 chars: 63 (PostgreSQL limit) - 7 (len("tenant_"))
-    tenant_slug: str = Field(min_length=1, max_length=56)
+    tenant_slug: str = Field(
+        min_length=1,
+        max_length=56,
+        json_schema_extra={
+            "examples": ["acme_corp", "my_company"],
+            "description": "Tenant identifier. Lowercase alphanumeric with underscores.",
+        },
+    )
 
     @field_validator("password")
     @classmethod

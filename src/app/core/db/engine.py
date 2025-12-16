@@ -13,7 +13,9 @@ _engine: AsyncEngine | None = None
 def _get_connect_args() -> dict[str, Any]:
     """Get connection arguments including SSL configuration."""
     settings = get_settings()
-    connect_args: dict[str, Any] = {}
+    connect_args: dict[str, Any] = {
+        "statement_cache_size": settings.database_statement_cache_size,
+    }
 
     ssl_mode = settings.database_ssl_mode
     if ssl_mode != "disable":

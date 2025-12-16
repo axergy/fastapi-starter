@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from src.app.api.dependencies import AuthenticatedUser, TenantServiceDep
+from src.app.api.dependencies import AuthenticatedUser, SuperUser, TenantServiceDep
 from src.app.models.public import TenantStatus
 from src.app.schemas.pagination import PaginatedResponse
 from src.app.schemas.tenant import (
@@ -40,6 +40,7 @@ router = APIRouter(prefix="/tenants", tags=["tenants"])
 async def create_tenant(
     request: TenantCreate,
     service: TenantServiceDep,
+    _: SuperUser,
 ) -> TenantProvisioningResponse:
     """
     Start tenant provisioning workflow.
@@ -97,7 +98,9 @@ async def create_tenant(
         404: {"description": "Tenant not found"},
     },
 )
-async def get_tenant_status(slug: str, service: TenantServiceDep) -> TenantStatusResponse:
+async def get_tenant_status(
+    slug: str, service: TenantServiceDep, _: SuperUser
+) -> TenantStatusResponse:
     """
     Check tenant provisioning status from database.
 

@@ -46,6 +46,9 @@ class AuditService:
         Automatically captures assumed identity context if present.
         Failures are logged but do not raise exceptions.
 
+        Note: The config.audit_mode setting exists for future async/sampled support,
+        but currently only synchronous logging (sync mode) is implemented.
+
         Args:
             action: The action being performed (AuditAction enum or string)
             entity_type: Type of entity affected (e.g., "user", "tenant")

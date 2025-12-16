@@ -19,9 +19,15 @@ if config.config_file_name is not None and os.path.exists(config.config_file_nam
 target_metadata = SQLModel.metadata
 
 
+def get_database_url() -> str:
+    """Get database URL for migrations, preferring dedicated migrations URL."""
+    settings = get_settings()
+    return settings.database_migrations_url or settings.database_url
+
+
 def get_url() -> str:
     """Get sync database URL (convert asyncpg to psycopg2)."""
-    url = get_settings().database_url
+    url = get_database_url()
     # Convert async URL to sync for Alembic
     return url.replace("+asyncpg", "")
 
@@ -84,9 +90,14 @@ def do_run_migrations(connection, schema: str | None = None) -> None:
             include_object=include_object,
         )
     else:
+        # Public migrations - explicitly set search_path to prevent
+        # tables from being created in wrong schema with non-standard defaults
+        connection.execute(text("SET search_path TO public"))
+        connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            version_table_schema="public",
             compare_type=True,
             include_object=include_object,
         )

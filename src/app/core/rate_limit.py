@@ -60,15 +60,19 @@ _script_sha: str | None = None
 
 
 def get_rate_limit_key(request: Request) -> str:
-    """Generate rate limit key from IP + tenant slug (if present).
+    """Generate rate limit key from client IP only.
 
-    This prevents a single IP from exhausting rate limits across all tenants
-    while still allowing per-tenant rate limiting when X-Tenant-ID is provided.
+    SECURITY WARNING: Do NOT include user-controlled headers (like X-Tenant-ID)
+    in the rate limit key. Attackers can trivially bypass rate limiting by
+    rotating header values to create unlimited new buckets, enabling:
+    - DoS attacks (rate limiting becomes ineffective)
+    - Memory exhaustion (unbounded growth of rate limit buckets)
+    - Resource abuse (unlimited requests)
+
+    For authenticated users, consider using IP + authenticated user_id instead,
+    but never use unauthenticated headers.
     """
     ip = get_remote_address(request) or "unknown"
-    tenant_id = request.headers.get("X-Tenant-ID", "")
-    if tenant_id:
-        return f"{ip}:{tenant_id}"
     return ip
 
 

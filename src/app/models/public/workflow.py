@@ -15,7 +15,7 @@ class WorkflowExecution(SQLModel, table=True):
     __table_args__ = {"schema": "public"}
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
-    workflow_id: str = Field(max_length=255, index=True)
+    workflow_id: str = Field(max_length=255, unique=True)
     workflow_type: str = Field(max_length=100)
     entity_type: str = Field(max_length=50)  # "tenant", "user"
     entity_id: UUID = Field(index=True)

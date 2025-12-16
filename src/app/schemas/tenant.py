@@ -7,7 +7,14 @@ from pydantic import BaseModel, Field, field_validator
 
 class TenantCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    slug: str = Field(min_length=1, max_length=56)
+    slug: str = Field(
+        min_length=1,
+        max_length=56,
+        json_schema_extra={
+            "examples": ["acme_corp", "my_company", "tenant_123"],
+            "description": "Lowercase alphanumeric with underscores only. No hyphens.",
+        },
+    )
 
     @field_validator("slug")
     @classmethod

@@ -23,6 +23,7 @@ with workflow.unsafe.imports_passed_through():
         SendEmailInput,
         SoftDeleteTenantInput,
         UpdateTenantStatusInput,
+        UpdateWorkflowExecutionStatusInput,
         cleanup_email_verification_tokens,
         cleanup_expired_invites,
         cleanup_refresh_tokens,
@@ -33,6 +34,7 @@ with workflow.unsafe.imports_passed_through():
         send_welcome_email,
         soft_delete_tenant,
         update_tenant_status,
+        update_workflow_execution_status,
     )
 
 
@@ -174,6 +176,20 @@ class TenantProvisioningWorkflow:
                 ),
             )
 
+            # Step 5: Update workflow execution status to completed
+            await workflow.execute_activity(
+                update_workflow_execution_status,
+                UpdateWorkflowExecutionStatusInput(
+                    workflow_id=workflow.info().workflow_id,
+                    status="completed",
+                ),
+                start_to_close_timeout=timedelta(seconds=10),
+                retry_policy=RetryPolicy(
+                    maximum_attempts=3,
+                    initial_interval=timedelta(seconds=1),
+                ),
+            )
+
             workflow.logger.info(f"Tenant provisioning complete: {tenant_id}")
             return tenant_id
 
@@ -187,6 +203,21 @@ class TenantProvisioningWorkflow:
             await workflow.execute_activity(
                 update_tenant_status,
                 UpdateTenantStatusInput(tenant_id=tenant_id, status=TenantStatus.FAILED.value),
+                start_to_close_timeout=timedelta(seconds=10),
+                retry_policy=RetryPolicy(
+                    maximum_attempts=3,
+                    initial_interval=timedelta(seconds=1),
+                ),
+            )
+
+            # Update workflow execution status to failed
+            await workflow.execute_activity(
+                update_workflow_execution_status,
+                UpdateWorkflowExecutionStatusInput(
+                    workflow_id=workflow.info().workflow_id,
+                    status="failed",
+                    error_message=str(e),
+                ),
                 start_to_close_timeout=timedelta(seconds=10),
                 retry_policy=RetryPolicy(
                     maximum_attempts=3,
