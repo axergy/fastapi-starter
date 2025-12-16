@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p0
 issue_id: "002"
 tags: [security, database, multi-tenancy, critical]

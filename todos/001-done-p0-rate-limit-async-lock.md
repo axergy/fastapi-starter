@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p0
 issue_id: "001"
 tags: [performance, async, critical]

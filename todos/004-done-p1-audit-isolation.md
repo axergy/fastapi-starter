@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "004"
 tags: [audit, observability, database, transaction]
