@@ -28,12 +28,10 @@ def test_valid_slugs_accepted(slug: str):
     assert tenant.slug == slug
 
 
-@given(slug=st.text(min_size=1, max_size=0))
-def test_empty_slugs_rejected(slug: str):
+def test_empty_slugs_rejected():
     """Empty slugs should be rejected."""
     with pytest.raises(ValidationError) as exc_info:
-        TenantCreate(name="Test", slug=slug)
-    # Verify it's a validation error for the slug field
+        TenantCreate(name="Test", slug="")
     errors = exc_info.value.errors()
     assert any(error["loc"] == ("slug",) for error in errors)
 
