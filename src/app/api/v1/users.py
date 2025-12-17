@@ -124,7 +124,7 @@ async def list_my_tenants(
 ) -> PaginatedResponse[TenantRead]:
     """List all tenants the current user belongs to.
 
-    This endpoint does not require a tenant context (X-Tenant-ID header),
+    This endpoint does not require a tenant context (X-Tenant-Slug header),
     making it useful for tenant selection screens after login.
     Uses cursor-based pagination for efficient traversal.
     """

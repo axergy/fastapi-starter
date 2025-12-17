@@ -139,7 +139,7 @@ class TestLogin:
     async def test_login_requires_tenant_header(
         self, client_no_tenant: AsyncClient, test_user: dict
     ) -> None:
-        """Test login fails without X-Tenant-ID header."""
+        """Test login fails without X-Tenant-Slug header."""
         response = await client_no_tenant.post(
             "/api/v1/auth/login",
             json={
@@ -149,7 +149,7 @@ class TestLogin:
         )
 
         assert response.status_code == 400
-        assert "X-Tenant-ID" in response.json()["detail"]
+        assert "X-Tenant-Slug" in response.json()["detail"]
 
 
 class TestTokenOperations:

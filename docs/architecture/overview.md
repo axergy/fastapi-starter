@@ -124,7 +124,7 @@ sequenceDiagram
     participant R as Repository
     participant DB as Database
 
-    C->>M: Request + X-Tenant-ID + JWT
+    C->>M: Request + X-Tenant-Slug + JWT
     M->>M: Rate Limiting Check
     M->>M: Set Request Context
     M->>A: Validate JWT

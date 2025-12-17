@@ -146,7 +146,7 @@ Wait until `status` is `ready` before proceeding.
 ```bash
 curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: acme" \
+  -H "X-Tenant-Slug: acme" \
   -d '{
     "email": "admin@example.com",
     "password": "SecureP@ssw0rd!2024"
@@ -170,7 +170,7 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 # Get current user profile
 curl http://localhost:8000/api/v1/users/me \
   -H "Authorization: Bearer <access_token>" \
-  -H "X-Tenant-ID: acme"
+  -H "X-Tenant-Slug: acme"
 ```
 
 ## Environment Variables
@@ -318,7 +318,7 @@ alembic revision -m "Custom migration"
 ```bash
 curl -X POST http://localhost:8000/api/v1/invites \
   -H "Authorization: Bearer <admin_token>" \
-  -H "X-Tenant-ID: acme" \
+  -H "X-Tenant-Slug: acme" \
   -H "Content-Type: application/json" \
   -d '{
     "email": "newuser@example.com",

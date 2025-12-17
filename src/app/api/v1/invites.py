@@ -26,7 +26,7 @@ router = APIRouter(prefix="/invites", tags=["invites"])
 
 
 # =============================================================================
-# Admin Endpoints (require X-Tenant-ID header + admin role)
+# Admin Endpoints (require X-Tenant-Slug header + admin role)
 # =============================================================================
 
 

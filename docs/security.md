@@ -236,7 +236,7 @@ async def get_current_user(
     if payload.get("type") not in ("access", "assumed_access"):
         raise HTTPException(401, "Invalid token type")
 
-    # 4. CRITICAL: Verify tenant_id matches X-Tenant-ID header
+    # 4. CRITICAL: Verify tenant_id matches X-Tenant-Slug header
     if str(payload.get("tenant_id")) != str(tenant.id):
         raise HTTPException(403, "Token not valid for this tenant")
 
@@ -327,7 +327,7 @@ class RateLimitMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        # Get client IP (only source - not X-Tenant-ID)
+        # Get client IP (only source - not X-Tenant-Slug)
         client_ip = self._get_client_ip(scope)
 
         # Check rate limit
@@ -383,7 +383,7 @@ class Settings(BaseSettings):
     global_rate_limit_burst: int = 20
 ```
 
-> **Warning**: Rate limit keys use only client IP, never user-supplied headers like `X-Tenant-ID`. This prevents attackers from bypassing limits by rotating headers.
+> **Warning**: Rate limit keys use only client IP, never user-supplied headers like `X-Tenant-Slug`. This prevents attackers from bypassing limits by rotating headers.
 
 ## Email Verification
 

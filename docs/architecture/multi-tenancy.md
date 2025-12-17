@@ -57,7 +57,7 @@ Tenant slugs have strict validation to ensure safe schema names:
 | Constraint | Value | Reason |
 |------------|-------|--------|
 | Max length | 56 characters | PostgreSQL limit (63) - prefix length (7) |
-| Format | `^[a-z][a-z0-9]*(_[a-z0-9]+)*$` | Valid SQL identifier |
+| Format | `^[a-z][a-z0-9]*([-_][a-z0-9]+)*$` | Valid SQL identifier (hyphens converted to underscores) |
 | Prefix | `tenant_` | Schema namespace isolation |
 
 ```python
@@ -65,7 +65,7 @@ Tenant slugs have strict validation to ensure safe schema names:
 MAX_SCHEMA_LENGTH: Final[int] = 63  # PostgreSQL identifier limit
 TENANT_SCHEMA_PREFIX: Final[str] = "tenant_"
 MAX_TENANT_SLUG_LENGTH: Final[int] = MAX_SCHEMA_LENGTH - len(TENANT_SCHEMA_PREFIX)
-TENANT_SLUG_REGEX: Final[str] = r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+TENANT_SLUG_REGEX: Final[str] = r"^[a-z][a-z0-9]*([-_][a-z0-9]+)*$"
 ```
 
 ## Tenant Provisioning Workflow
@@ -404,7 +404,7 @@ The tenant validation dependency ensures only ready tenants can be accessed:
 ```python
 # src/app/api/dependencies/tenant.py
 async def get_validated_tenant(
-    tenant_slug: str = Header(alias="X-Tenant-ID"),
+    tenant_slug: str = Header(alias="X-Tenant-Slug"),
     session: DBSession,
 ) -> Tenant:
     """Validate tenant exists and is ready for use."""

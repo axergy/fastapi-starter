@@ -62,7 +62,7 @@ _script_sha: str | None = None
 def get_rate_limit_key(request: Request) -> str:
     """Generate rate limit key from client IP only.
 
-    SECURITY WARNING: Do NOT include user-controlled headers (like X-Tenant-ID)
+    SECURITY WARNING: Do NOT include user-controlled headers (like X-Tenant-Slug)
     in the rate limit key. Attackers can trivially bypass rate limiting by
     rotating header values to create unlimited new buckets, enabling:
     - DoS attacks (rate limiting becomes ineffective)

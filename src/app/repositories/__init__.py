@@ -14,10 +14,13 @@ from src.app.repositories.public import (
     UserRepository,
     WorkflowExecutionRepository,
 )
+from src.app.repositories.tenant import ProjectRepository
 
 __all__ = [
-    "AuditLogRepository",
+    # Base
     "BaseRepository",
+    # Public schema
+    "AuditLogRepository",
     "EmailVerificationTokenRepository",
     "MembershipRepository",
     "RefreshTokenRepository",
@@ -25,4 +28,6 @@ __all__ = [
     "TenantRepository",
     "UserRepository",
     "WorkflowExecutionRepository",
+    # Tenant schema
+    "ProjectRepository",
 ]

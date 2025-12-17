@@ -18,12 +18,15 @@ from src.app.models.public import (
     WorkflowExecution,
 )
 
+# Tenant schema models
+from src.app.models.tenant import Project
+
 __all__ = [
     # Enums
     "InviteStatus",
     "MembershipRole",
     "TenantStatus",
-    # Models
+    # Public schema models
     "EmailVerificationToken",
     "RefreshToken",
     "Tenant",
@@ -31,4 +34,6 @@ __all__ = [
     "User",
     "UserTenantMembership",
     "WorkflowExecution",
+    # Tenant schema models
+    "Project",
 ]

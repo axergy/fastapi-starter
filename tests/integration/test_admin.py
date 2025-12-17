@@ -160,7 +160,7 @@ class TestUserReadSchema:
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test",
-            headers={"X-Tenant-ID": test_superuser_with_tenant["tenant_slug"]},
+            headers={"X-Tenant-Slug": test_superuser_with_tenant["tenant_slug"]},
         ) as client:
             # Login as superuser
             login_response = await client.post(

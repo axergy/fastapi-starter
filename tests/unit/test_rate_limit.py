@@ -69,7 +69,7 @@ class TestGetRateLimitKey:
     """Tests for get_rate_limit_key function."""
 
     def test_returns_ip_when_no_tenant_header(self, mock_request: MagicMock) -> None:
-        """When X-Tenant-ID header is absent, returns just the IP."""
+        """When X-Tenant-Slug header is absent, returns just the IP."""
         mock_request.headers = {}
 
         with patch("src.app.core.rate_limit.get_remote_address", return_value="192.168.1.100"):
@@ -78,8 +78,8 @@ class TestGetRateLimitKey:
         assert key == "192.168.1.100"
 
     def test_returns_ip_only_when_tenant_header_present(self, mock_request: MagicMock) -> None:
-        """When X-Tenant-ID header is present, returns IP only (header ignored for security)."""
-        mock_request.headers = {"X-Tenant-ID": "acme-corp"}
+        """When X-Tenant-Slug header is present, returns IP only (header ignored for security)."""
+        mock_request.headers = {"X-Tenant-Slug": "acme-corp"}
 
         with patch("src.app.core.rate_limit.get_remote_address", return_value="192.168.1.100"):
             key = get_rate_limit_key(mock_request)
@@ -99,7 +99,7 @@ class TestGetRateLimitKey:
         self, mock_request: MagicMock
     ) -> None:
         """When IP unavailable and tenant present, still returns 'unknown' (tenant ignored)."""
-        mock_request.headers = {"X-Tenant-ID": "acme-corp"}
+        mock_request.headers = {"X-Tenant-Slug": "acme-corp"}
 
         with patch("src.app.core.rate_limit.get_remote_address", return_value=None):
             key = get_rate_limit_key(mock_request)
@@ -107,8 +107,8 @@ class TestGetRateLimitKey:
         assert key == "unknown"
 
     def test_empty_tenant_header_returns_ip_only(self, mock_request: MagicMock) -> None:
-        """When X-Tenant-ID is empty string, returns just IP."""
-        mock_request.headers = {"X-Tenant-ID": ""}
+        """When X-Tenant-Slug is empty string, returns just IP."""
+        mock_request.headers = {"X-Tenant-Slug": ""}
 
         with patch("src.app.core.rate_limit.get_remote_address", return_value="10.0.0.1"):
             key = get_rate_limit_key(mock_request)

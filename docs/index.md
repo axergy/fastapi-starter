@@ -88,7 +88,7 @@ graph LR
 
 **Request Flow:**
 
-1. Client sends request with `X-Tenant-ID` header and JWT token
+1. Client sends request with `X-Tenant-Slug` header and JWT token
 2. FastAPI validates tenant exists and is ready
 3. Auth dependency verifies JWT and tenant membership
 4. Service layer executes business logic

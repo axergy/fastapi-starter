@@ -36,7 +36,7 @@ def setup_middlewares(app: FastAPI, settings: Settings) -> None:
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-Tenant-Slug", "X-Request-ID"],
         expose_headers=["X-Total-Count"],
     )
 

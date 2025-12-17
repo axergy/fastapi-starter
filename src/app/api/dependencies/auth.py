@@ -166,7 +166,7 @@ async def get_current_user(
 ) -> User:
     """Validate access token and return current user.
 
-    IMPORTANT: Validates that JWT tenant_id matches the X-Tenant-ID header's tenant.
+    IMPORTANT: Validates that JWT tenant_id matches the X-Tenant-Slug header's tenant.
 
     For assumed identity tokens: returns the assumed user and sets the
     assumed identity context for audit logging.
@@ -174,7 +174,7 @@ async def get_current_user(
     user_service = _get_user_service(user_repo, session)
     payload, user, assumed_identity_ctx = await _validate_access_token(authorization, user_service)
 
-    # CRITICAL: Validate JWT tenant_id matches X-Tenant-ID header's tenant
+    # CRITICAL: Validate JWT tenant_id matches X-Tenant-Slug header's tenant
     token_tenant_id = payload.get("tenant_id")
     if not token_tenant_id:
         raise HTTPException(

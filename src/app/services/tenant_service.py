@@ -47,8 +47,15 @@ class TenantService:
 
         Returns:
             workflow_id: The Temporal workflow ID for tracking
+
+        Raises:
+            ValueError: If slug already exists or would collide with existing tenant
         """
-        # Create tenant record FIRST (unique constraint on slug handles races)
+        # Check for collisions (acme-corp and acme_corp both map to tenant_acme_corp)
+        if await self.tenant_repo.exists_by_slug(slug):
+            raise ValueError(f"Tenant with slug '{slug}' already exists")
+
+        # Create tenant record (unique constraint on slug handles remaining races)
         try:
             tenant = Tenant(name=name, slug=slug, status=TenantStatus.PROVISIONING.value)
             self.tenant_repo.add(tenant)

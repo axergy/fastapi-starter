@@ -274,7 +274,7 @@ class TestAuthentication:
         response = await client.post(
             "/api/v1/auth/login",
             json={"email": test_user.email, "password": "TestPassword123!"},
-            headers={"X-Tenant-ID": test_user.tenant_slug},
+            headers={"X-Tenant-Slug": test_user.tenant_slug},
         )
         assert response.status_code == 200
         data = response.json()
@@ -286,7 +286,7 @@ class TestAuthentication:
         response = await client.post(
             "/api/v1/auth/login",
             json={"email": test_user.email, "password": "wrong"},
-            headers={"X-Tenant-ID": test_user.tenant_slug},
+            headers={"X-Tenant-Slug": test_user.tenant_slug},
         )
         assert response.status_code == 401
 
@@ -296,7 +296,7 @@ class TestAuthentication:
         response = await client.post(
             "/api/v1/auth/login",
             json={"email": test_user.email, "password": "TestPassword123!"},
-            headers={"X-Tenant-ID": test_user.tenant_slug},
+            headers={"X-Tenant-Slug": test_user.tenant_slug},
         )
         token = response.json()["access_token"]
 
@@ -305,7 +305,7 @@ class TestAuthentication:
             "/api/v1/users/me",
             headers={
                 "Authorization": f"Bearer {token}",
-                "X-Tenant-ID": "different_tenant",
+                "X-Tenant-Slug": "different_tenant",
             },
         )
         assert response.status_code == 403

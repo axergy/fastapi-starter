@@ -10,6 +10,7 @@ from src.app.schemas.auth import (
     RefreshResponse,
     RegisterRequest,
 )
+from src.app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
 from src.app.schemas.tenant import TenantCreate, TenantRead
 from src.app.schemas.user import UserCreate, UserRead, UserUpdate
 
@@ -24,6 +25,10 @@ __all__ = [
     "RefreshRequest",
     "RefreshResponse",
     "RegisterRequest",
+    # Project
+    "ProjectCreate",
+    "ProjectRead",
+    "ProjectUpdate",
     # Tenant
     "TenantCreate",
     "TenantRead",

@@ -43,8 +43,8 @@ class RegisterRequest(BaseModel):
         min_length=1,
         max_length=MAX_TENANT_SLUG_LENGTH,
         json_schema_extra={
-            "examples": ["acme_corp", "my_company"],
-            "description": "Tenant identifier. Lowercase alphanumeric with underscores.",
+            "examples": ["acme-corp", "my_company"],
+            "description": "Tenant identifier. Lowercase alphanumeric with hyphens or underscores.",
         },
     )
 

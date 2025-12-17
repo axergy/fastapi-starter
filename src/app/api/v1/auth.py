@@ -56,7 +56,7 @@ async def login(
 ) -> LoginResponse:
     """Authenticate user and return tokens.
 
-    Requires X-Tenant-ID header. User must have membership in the tenant.
+    Requires X-Tenant-Slug header. User must have membership in the tenant.
     User must have verified their email address.
     """
     try:
@@ -180,7 +180,7 @@ async def register(
 ) -> RegisterResponse:
     """Register new user AND create a new tenant.
 
-    Does NOT require X-Tenant-ID header.
+    Does NOT require X-Tenant-Slug header.
     Returns user info and workflow_id to poll for tenant status.
     """
     try:
@@ -252,7 +252,7 @@ async def verify_email(
 ) -> VerifyEmailResponse:
     """Verify email address using token from verification email.
 
-    Does NOT require X-Tenant-ID header or authentication.
+    Does NOT require X-Tenant-Slug header or authentication.
     """
     user = await service.verify_token(verify_data.token)
 
@@ -293,7 +293,7 @@ async def resend_verification(
 ) -> ResendVerificationResponse:
     """Resend verification email.
 
-    Does NOT require X-Tenant-ID header or authentication.
+    Does NOT require X-Tenant-Slug header or authentication.
     Rate limited to 3 per hour to prevent abuse.
     Always returns success to prevent email enumeration.
     """

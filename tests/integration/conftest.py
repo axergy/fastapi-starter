@@ -178,7 +178,7 @@ async def client(test_tenant: str) -> AsyncGenerator[AsyncClient]:
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
-        headers={"X-Tenant-ID": test_tenant},
+        headers={"X-Tenant-Slug": test_tenant},
     ) as client:
         yield client
 

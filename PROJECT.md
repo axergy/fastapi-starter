@@ -16,7 +16,7 @@ A production-ready, multi-tenant FastAPI boilerplate designed for high-performan
 * **Strategy**: **Schema-per-Tenant**.
     * *Public Schema*: Holds shared data (Tenants table, Plans, System Config).
     * *Tenant Schemas*: Each tenant gets a dedicated Postgres schema (e.g., `tenant_acme`, `tenant_xyz`).
-* **Isolation**: Middleware intercepts `X-Tenant-ID` (or subdomain), and the DB session automatically executes `SET search_path TO tenant_x, public`. Data leakage is architecturally impossible at the query level.
+* **Isolation**: Middleware intercepts `X-Tenant-Slug` header (or subdomain), and the DB session automatically executes `SET search_path TO tenant_x, public`. Data leakage is architecturally impossible at the query level.
 
 ### Background Workflows & Reliability
 * **Orchestrator**: [Temporal.io](https://temporal.io/). Replaces standard Celery/Redis queues.

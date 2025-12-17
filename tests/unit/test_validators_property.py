@@ -11,11 +11,11 @@ from src.app.schemas.tenant import TenantCreate
 pytestmark = pytest.mark.unit
 
 
-# Strategy for valid slugs: lowercase alphanumeric + underscores, 3-56 chars
-# Pattern: ^[a-z][a-z0-9]*(_[a-z0-9]+)*$
+# Strategy for valid slugs: lowercase alphanumeric + hyphens/underscores, 1-56 chars
+# Pattern: ^[a-z][a-z0-9]*([-_][a-z0-9]+)*$
 # - Starts with lowercase letter
 # - Contains lowercase letters, numbers
-# - Underscores only as separators (not consecutive, not trailing)
+# - Hyphens and underscores as separators (not consecutive, not trailing)
 valid_slug = st.from_regex(TENANT_SLUG_REGEX, fullmatch=True).filter(
     lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
 )
@@ -73,12 +73,49 @@ def test_digit_start_rejected(slug: str):
 
 
 @given(
-    slug=st.from_regex(r"^[a-z][a-z0-9_]*-[a-z0-9_]*$", fullmatch=True).filter(
+    slug=st.from_regex(r"^[a-z][a-z0-9]*(-[a-z0-9]+)+$", fullmatch=True).filter(
         lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
     )
 )
-def test_hyphen_rejected(slug: str):
-    """Slugs containing hyphens should be rejected."""
+def test_hyphen_accepted(slug: str):
+    """Slugs containing hyphens as separators should be accepted."""
+    tenant = TenantCreate(name="Test Company", slug=slug)
+    assert tenant.slug == slug
+
+
+@given(
+    slug=st.from_regex(r"^[a-z][a-z0-9]*--[a-z0-9-]*$", fullmatch=True).filter(
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
+    )
+)
+def test_double_hyphen_rejected(slug: str):
+    """Slugs with consecutive hyphens should be rejected."""
+    with pytest.raises(ValidationError) as exc_info:
+        TenantCreate(name="Test", slug=slug)
+    errors = exc_info.value.errors()
+    assert any(error["loc"] == ("slug",) for error in errors)
+
+
+@given(
+    slug=st.from_regex(r"^[a-z][a-z0-9-]*-$", fullmatch=True).filter(
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
+    )
+)
+def test_trailing_hyphen_rejected(slug: str):
+    """Slugs ending with hyphen should be rejected."""
+    with pytest.raises(ValidationError) as exc_info:
+        TenantCreate(name="Test", slug=slug)
+    errors = exc_info.value.errors()
+    assert any(error["loc"] == ("slug",) for error in errors)
+
+
+@given(
+    slug=st.from_regex(r"^-[a-z0-9-]*$", fullmatch=True).filter(
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
+    )
+)
+def test_leading_hyphen_rejected(slug: str):
+    """Slugs starting with hyphen should be rejected."""
     with pytest.raises(ValidationError) as exc_info:
         TenantCreate(name="Test", slug=slug)
     errors = exc_info.value.errors()
@@ -141,6 +178,16 @@ class TestSlugValidatorEdgeCases:
         """Slug with single underscore separators should be accepted."""
         tenant = TenantCreate(name="Test", slug="test_company_name")
         assert tenant.slug == "test_company_name"
+
+    def test_slug_with_single_hyphen_separator_accepted(self):
+        """Slug with single hyphen separators should be accepted."""
+        tenant = TenantCreate(name="Test", slug="test-company-name")
+        assert tenant.slug == "test-company-name"
+
+    def test_slug_with_mixed_separators_accepted(self):
+        """Slug with mixed hyphen and underscore separators should be accepted."""
+        tenant = TenantCreate(name="Test", slug="test-company_name")
+        assert tenant.slug == "test-company_name"
 
     def test_max_length_slug_accepted(self):
         """Slug with exactly MAX_TENANT_SLUG_LENGTH characters should be accepted."""

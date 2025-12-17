@@ -7,7 +7,7 @@ from sqlmodel import Field, SQLModel
 
 from src.app.core.security.validators import (
     MAX_TENANT_SLUG_LENGTH,
-    TENANT_SCHEMA_PREFIX,
+    slug_to_schema_name,
     validate_schema_name,
 )
 from src.app.models.base import utc_now
@@ -32,14 +32,17 @@ class Tenant(SQLModel, table=True):
     def schema_name(self) -> str:
         """Get the schema name for this tenant.
 
+        Hyphens in slugs are converted to underscores for PostgreSQL compatibility.
+        E.g., slug 'acme-corp' -> schema 'tenant_acme_corp'
+
         Returns:
-            Schema name in format 'tenant_{slug}'
+            Schema name in format 'tenant_{normalized_slug}'
 
         Raises:
             ValueError: If the resulting schema name exceeds PostgreSQL's 63-char limit
                 or contains invalid characters
         """
-        name = f"{TENANT_SCHEMA_PREFIX}{self.slug}"
+        name = slug_to_schema_name(self.slug)
         validate_schema_name(name)
         return name
 

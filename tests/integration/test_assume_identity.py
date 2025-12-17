@@ -580,7 +580,7 @@ class TestAssumeIdentityAudit:
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test",
-            headers={"X-Tenant-ID": test_tenant},
+            headers={"X-Tenant-Slug": test_tenant},
         ) as client:
             # Login as superuser
             login_response = await client.post(
@@ -653,7 +653,7 @@ class TestAssumedTokenTenantValidation:
         test_user: dict,
         db_session: AsyncSession,
     ) -> None:
-        """Assumed token works when X-Tenant-ID matches token's tenant."""
+        """Assumed token works when X-Tenant-Slug matches token's tenant."""
         # Login as superuser
         login_response = await client.post(
             "/api/v1/auth/login",
@@ -718,7 +718,7 @@ class TestAssumedTokenTenantValidation:
             async with AsyncClient(
                 transport=ASGITransport(app=app),
                 base_url="http://test",
-                headers={"X-Tenant-ID": test_tenant},
+                headers={"X-Tenant-Slug": test_tenant},
             ) as client:
                 # Login as superuser
                 login_response = await client.post(
@@ -745,7 +745,7 @@ class TestAssumedTokenTenantValidation:
             async with AsyncClient(
                 transport=ASGITransport(app=app),
                 base_url="http://test",
-                headers={"X-Tenant-ID": second_tenant.slug},
+                headers={"X-Tenant-Slug": second_tenant.slug},
             ) as wrong_tenant_client:
                 me_response = await wrong_tenant_client.get(
                     "/api/v1/users/me",

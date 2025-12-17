@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlmodel import select
+from sqlmodel import func, select
 
 from src.app.models.public import Tenant, UserTenantMembership
 from src.app.repositories.base import BaseRepository
@@ -19,9 +19,16 @@ class TenantRepository(BaseRepository[Tenant]):
         return result.scalar_one_or_none()
 
     async def exists_by_slug(self, slug: str) -> bool:
-        """Check if a tenant with the given slug exists."""
-        tenant = await self.get_by_slug(slug)
-        return tenant is not None
+        """Check if a tenant exists that would collide with the given slug.
+
+        Since 'acme-corp' and 'acme_corp' both map to schema 'tenant_acme_corp',
+        we normalize slugs (hyphens -> underscores) before checking for conflicts.
+        """
+        normalized = slug.replace("-", "_")
+        result = await self.session.execute(
+            select(Tenant).where(func.replace(Tenant.slug, "-", "_") == normalized)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def list_all(
         self, cursor: str | None, limit: int, active_only: bool = True

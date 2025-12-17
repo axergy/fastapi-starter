@@ -6,7 +6,7 @@ from typing import Final
 MAX_SCHEMA_LENGTH: Final[int] = 63  # PostgreSQL identifier limit
 TENANT_SCHEMA_PREFIX: Final[str] = "tenant_"
 MAX_TENANT_SLUG_LENGTH: Final[int] = MAX_SCHEMA_LENGTH - len(TENANT_SCHEMA_PREFIX)  # 56
-TENANT_SLUG_REGEX: Final[str] = r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+TENANT_SLUG_REGEX: Final[str] = r"^[a-z][a-z0-9]*([-_][a-z0-9]+)*$"
 TENANT_SCHEMA_REGEX: Final[str] = rf"^{TENANT_SCHEMA_PREFIX}[a-z][a-z0-9]*(_[a-z0-9]+)*$"
 
 _TENANT_SLUG_PATTERN: Final[re.Pattern[str]] = re.compile(TENANT_SLUG_REGEX)
@@ -21,9 +21,27 @@ def validate_tenant_slug_format(slug: str) -> str:
     if not _TENANT_SLUG_PATTERN.match(slug):
         raise ValueError(
             "Slug must start with a letter and contain only lowercase letters, numbers, "
-            "and single underscores as separators"
+            "and single hyphens or underscores as separators"
         )
     return slug
+
+
+def slug_to_schema_name(slug: str) -> str:
+    """Convert a tenant slug to a PostgreSQL schema name.
+
+    Hyphens are converted to underscores for PostgreSQL compatibility.
+    E.g., 'acme-corp' -> 'tenant_acme_corp'
+    """
+    return f"{TENANT_SCHEMA_PREFIX}{slug.replace('-', '_')}"
+
+
+def normalize_slug_for_comparison(slug: str) -> str:
+    """Normalize a slug for collision detection.
+
+    Both 'acme-corp' and 'acme_corp' normalize to 'acme_corp'.
+    Used to prevent slugs that would map to the same schema name.
+    """
+    return slug.replace("-", "_")
 
 
 def validate_schema_name(schema_name: str) -> None:

@@ -15,8 +15,8 @@ class TenantCreate(BaseModel):
         min_length=1,
         max_length=MAX_TENANT_SLUG_LENGTH,
         json_schema_extra={
-            "examples": ["acme_corp", "my_company", "tenant_123"],
-            "description": "Lowercase alphanumeric with underscores only. No hyphens.",
+            "examples": ["acme-corp", "my_company", "tenant123"],
+            "description": "Lowercase alphanumeric with hyphens or underscores as separators.",
         },
     )
 

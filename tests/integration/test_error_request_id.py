@@ -36,7 +36,7 @@ def test_bad_request_includes_request_id(client: TestClient) -> None:
     # Try to access a protected endpoint without tenant header (gets 400)
     response = client.get("/api/v1/users/me")
 
-    # Should get 400 (missing X-Tenant-ID header)
+    # Should get 400 (missing X-Tenant-Slug header)
     assert response.status_code == 400
 
     # Should include request_id in response
