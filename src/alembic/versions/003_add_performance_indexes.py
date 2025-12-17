@@ -1,25 +1,24 @@
 """Add performance indexes
 
 Revision ID: 003
-Revises: 002
+Revises: 001
 Create Date: 2025-12-04 00:00:00.000000
 
 """
 
 from collections.abc import Sequence
 
-from alembic import context, op
+from alembic import op
+from src.alembic.migration_utils import is_tenant_migration
 
 revision: str = "003"
-down_revision: str | None = "002"
+down_revision: str | None = "001"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # These indexes are for public schema tables only
-    # Skip if running tenant schema migrations (tag argument present)
-    if context.get_tag_argument():
+    if is_tenant_migration():
         return
 
     # For refresh_tokens - improves token refresh queries
@@ -51,8 +50,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Skip if running tenant schema migrations
-    if context.get_tag_argument():
+    if is_tenant_migration():
         return
 
     op.drop_index("ix_refresh_tokens_user_tenant", table_name="refresh_tokens")

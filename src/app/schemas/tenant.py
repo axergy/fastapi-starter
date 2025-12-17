@@ -1,15 +1,19 @@
-import re
 from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+from src.app.core.security.validators import (
+    MAX_TENANT_SLUG_LENGTH,
+    validate_tenant_slug_format,
+)
 
 
 class TenantCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     slug: str = Field(
         min_length=1,
-        max_length=56,
+        max_length=MAX_TENANT_SLUG_LENGTH,
         json_schema_extra={
             "examples": ["acme_corp", "my_company", "tenant_123"],
             "description": "Lowercase alphanumeric with underscores only. No hyphens.",
@@ -19,12 +23,7 @@ class TenantCreate(BaseModel):
     @field_validator("slug")
     @classmethod
     def validate_slug(cls, v: str) -> str:
-        if not re.match(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$", v):
-            raise ValueError(
-                "Slug must start with a letter and contain only lowercase "
-                "letters, numbers, and single underscores as separators"
-            )
-        return v
+        return validate_tenant_slug_format(v)
 
 
 class TenantRead(BaseModel):

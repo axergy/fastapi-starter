@@ -5,6 +5,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
+from src.app.core.security.validators import MAX_TENANT_SLUG_LENGTH, TENANT_SLUG_REGEX
 from src.app.schemas.tenant import TenantCreate
 
 pytestmark = pytest.mark.unit
@@ -15,8 +16,8 @@ pytestmark = pytest.mark.unit
 # - Starts with lowercase letter
 # - Contains lowercase letters, numbers
 # - Underscores only as separators (not consecutive, not trailing)
-valid_slug = st.from_regex(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$", fullmatch=True).filter(
-    lambda s: 1 <= len(s) <= 56
+valid_slug = st.from_regex(TENANT_SLUG_REGEX, fullmatch=True).filter(
+    lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
 )
 
 
@@ -36,16 +37,20 @@ def test_empty_slugs_rejected():
     assert any(error["loc"] == ("slug",) for error in errors)
 
 
-@given(slug=st.text(min_size=57, max_size=100))
+@given(slug=st.text(min_size=MAX_TENANT_SLUG_LENGTH + 1, max_size=100))
 def test_long_slugs_rejected(slug: str):
-    """Slugs longer than 56 characters should be rejected."""
+    """Slugs longer than MAX_TENANT_SLUG_LENGTH should be rejected."""
     with pytest.raises(ValidationError) as exc_info:
         TenantCreate(name="Test", slug=slug)
     errors = exc_info.value.errors()
     assert any(error["loc"] == ("slug",) for error in errors)
 
 
-@given(slug=st.from_regex(r"^[A-Z][a-z0-9_]*$", fullmatch=True).filter(lambda s: 1 <= len(s) <= 56))
+@given(
+    slug=st.from_regex(r"^[A-Z][a-z0-9_]*$", fullmatch=True).filter(
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
+    )
+)
 def test_uppercase_start_rejected(slug: str):
     """Slugs starting with uppercase letter should be rejected."""
     with pytest.raises(ValidationError) as exc_info:
@@ -54,7 +59,11 @@ def test_uppercase_start_rejected(slug: str):
     assert any(error["loc"] == ("slug",) for error in errors)
 
 
-@given(slug=st.from_regex(r"^[0-9][a-z0-9_]*$", fullmatch=True).filter(lambda s: 1 <= len(s) <= 56))
+@given(
+    slug=st.from_regex(r"^[0-9][a-z0-9_]*$", fullmatch=True).filter(
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
+    )
+)
 def test_digit_start_rejected(slug: str):
     """Slugs starting with a digit should be rejected."""
     with pytest.raises(ValidationError) as exc_info:
@@ -65,7 +74,7 @@ def test_digit_start_rejected(slug: str):
 
 @given(
     slug=st.from_regex(r"^[a-z][a-z0-9_]*-[a-z0-9_]*$", fullmatch=True).filter(
-        lambda s: 1 <= len(s) <= 56
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
     )
 )
 def test_hyphen_rejected(slug: str):
@@ -78,7 +87,7 @@ def test_hyphen_rejected(slug: str):
 
 @given(
     slug=st.from_regex(r"^[a-z][a-z0-9]*__[a-z0-9_]*$", fullmatch=True).filter(
-        lambda s: 1 <= len(s) <= 56
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
     )
 )
 def test_double_underscore_rejected(slug: str):
@@ -90,7 +99,9 @@ def test_double_underscore_rejected(slug: str):
 
 
 @given(
-    slug=st.from_regex(r"^[a-z][a-z0-9_]*_$", fullmatch=True).filter(lambda s: 1 <= len(s) <= 56)
+    slug=st.from_regex(r"^[a-z][a-z0-9_]*_$", fullmatch=True).filter(
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
+    )
 )
 def test_trailing_underscore_rejected(slug: str):
     """Slugs ending with underscore should be rejected."""
@@ -100,7 +111,11 @@ def test_trailing_underscore_rejected(slug: str):
     assert any(error["loc"] == ("slug",) for error in errors)
 
 
-@given(slug=st.from_regex(r"^_[a-z0-9_]*$", fullmatch=True).filter(lambda s: 1 <= len(s) <= 56))
+@given(
+    slug=st.from_regex(r"^_[a-z0-9_]*$", fullmatch=True).filter(
+        lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
+    )
+)
 def test_leading_underscore_rejected(slug: str):
     """Slugs starting with underscore should be rejected."""
     with pytest.raises(ValidationError) as exc_info:
@@ -128,8 +143,8 @@ class TestSlugValidatorEdgeCases:
         assert tenant.slug == "test_company_name"
 
     def test_max_length_slug_accepted(self):
-        """Slug with exactly 56 characters should be accepted."""
-        slug = "a" * 56
+        """Slug with exactly MAX_TENANT_SLUG_LENGTH characters should be accepted."""
+        slug = "a" * MAX_TENANT_SLUG_LENGTH
         tenant = TenantCreate(name="Test", slug=slug)
         assert tenant.slug == slug
 

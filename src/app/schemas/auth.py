@@ -1,8 +1,10 @@
-import re
-
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from zxcvbn import zxcvbn
 
+from src.app.core.security.validators import (
+    MAX_TENANT_SLUG_LENGTH,
+    validate_tenant_slug_format,
+)
 from src.app.schemas.user import UserRead
 
 # Minimum zxcvbn score (0-4 scale): 3 = "safely unguessable"
@@ -37,10 +39,9 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=100)
     full_name: str = Field(min_length=1, max_length=100)
     tenant_name: str = Field(min_length=1, max_length=100)
-    # Max 56 chars: 63 (PostgreSQL limit) - 7 (len("tenant_"))
     tenant_slug: str = Field(
         min_length=1,
-        max_length=56,
+        max_length=MAX_TENANT_SLUG_LENGTH,
         json_schema_extra={
             "examples": ["acme_corp", "my_company"],
             "description": "Tenant identifier. Lowercase alphanumeric with underscores.",
@@ -74,12 +75,7 @@ class RegisterRequest(BaseModel):
     @field_validator("tenant_slug")
     @classmethod
     def validate_slug(cls, v: str) -> str:
-        if not re.match(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$", v):
-            raise ValueError(
-                "Slug must start with a letter and contain only lowercase "
-                "letters, numbers, and single underscores as separators"
-            )
-        return v
+        return validate_tenant_slug_format(v)
 
 
 class RegisterResponse(BaseModel):

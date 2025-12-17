@@ -4,15 +4,12 @@ These utilities handle proper FK-constraint-aware cleanup of test data.
 The delete order matters due to foreign key relationships.
 """
 
-import re
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-# Strict pattern for tenant schema names: tenant_ followed by valid slug
-# Must match the validation in src/app/core/security/validators.py
-_SCHEMA_NAME_PATTERN = re.compile(r"^tenant_[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
+from src.app.core.security.validators import validate_schema_name
 
 
 def _validate_schema_name_for_drop(schema_name: str) -> None:
@@ -27,17 +24,7 @@ def _validate_schema_name_for_drop(schema_name: str) -> None:
     Raises:
         ValueError: If schema name doesn't match expected tenant format
     """
-    if not schema_name or not isinstance(schema_name, str):
-        raise ValueError("Schema name must be a non-empty string")
-
-    if len(schema_name) > 63:
-        raise ValueError(f"Schema name '{schema_name}' exceeds PostgreSQL 63-char limit")
-
-    if not _SCHEMA_NAME_PATTERN.match(schema_name):
-        raise ValueError(
-            f"Invalid schema name format: '{schema_name}'. "
-            "Must match pattern 'tenant_<slug>' with lowercase alphanumeric slug."
-        )
+    validate_schema_name(schema_name)
 
 
 async def cleanup_tenant_cascade(conn: AsyncConnection, tenant_id: UUID) -> None:

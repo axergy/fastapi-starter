@@ -27,13 +27,13 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limit_state() -> None:
-    """Reset rate limit module state before each test."""
-    rate_limit._rate_limit_buckets.clear()
-    rate_limit._script_sha = None
+def _reset_rate_limit_state(reset_rate_limit_buckets):
+    """Reset rate limit module state before each test.
+
+    Delegates to shared fixture in tests/conftest.py.
+    """
+    # Delegate to shared fixture in tests/conftest.py
     yield
-    rate_limit._rate_limit_buckets.clear()
-    rate_limit._script_sha = None
 
 
 @pytest.fixture

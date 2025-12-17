@@ -1,5 +1,4 @@
-"""Tenant-specific models.
+"""Tenant-schema models.
 
-Add tenant-specific business models here (e.g., Project, Document, etc.)
-These models will live in tenant schemas, not the public schema.
+This package is reserved for schema-per-tenant SQLModel tables.
 """

@@ -12,6 +12,7 @@ from src.app.core.security import hash_password
 from src.app.models.public import Tenant, TenantStatus, User
 from src.app.repositories import UserRepository
 from src.app.services.email_verification_service import EmailVerificationService
+from src.app.services.tenant_service import TenantService
 from src.app.temporal.client import get_temporal_client
 from src.app.temporal.workflows import TenantProvisioningWorkflow
 
@@ -81,7 +82,7 @@ class RegistrationService:
         # Start tenant provisioning workflow AFTER commit
         settings = get_settings()
         client = await get_temporal_client()
-        workflow_id = f"tenant-provision-{tenant_slug}"
+        workflow_id = TenantService.get_workflow_id(tenant_slug)
 
         try:
             await client.start_workflow(

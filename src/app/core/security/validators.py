@@ -1,8 +1,27 @@
 """Security validators."""
 
 import re
+from typing import Final
 
-MAX_SCHEMA_LENGTH = 63  # PostgreSQL identifier limit
+MAX_SCHEMA_LENGTH: Final[int] = 63  # PostgreSQL identifier limit
+TENANT_SCHEMA_PREFIX: Final[str] = "tenant_"
+MAX_TENANT_SLUG_LENGTH: Final[int] = MAX_SCHEMA_LENGTH - len(TENANT_SCHEMA_PREFIX)  # 56
+TENANT_SLUG_REGEX: Final[str] = r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+
+_TENANT_SLUG_PATTERN: Final[re.Pattern[str]] = re.compile(TENANT_SLUG_REGEX)
+
+
+def validate_tenant_slug_format(slug: str) -> str:
+    """Validate tenant slug format (no `tenant_` prefix).
+
+    This validates **format only**. Length is enforced by Field(max_length=...).
+    """
+    if not _TENANT_SLUG_PATTERN.match(slug):
+        raise ValueError(
+            "Slug must start with a letter and contain only lowercase letters, numbers, "
+            "and single underscores as separators"
+        )
+    return slug
 
 
 def validate_schema_name(schema_name: str) -> None:

@@ -1,689 +1,628 @@
-Where you are now (quick read)
+Critical (legacy removal / dead code)
+1) Delete redundant migration 002_add_tenant_status (it’s already in 001)
 
-You’re already very close to production-grade: schema quoting/validation is solid, Alembic is much safer than most multi-tenant starters, and the Temporal workflow/compensation story is a strong foundation.
-
-Top highest-impact improvements I’d make to get to “gold standard”:
-
-Fix a real isolation footgun: pooled connections + search_path switching + asyncpg/driver statement caches can cause cross-tenant prepared statement reuse unless you explicitly disable statement caching. Your engine config doesn’t currently do that.
+Why: In the provided migrations, 001_initial already creates public.tenants.status
 
 code
 
-Close two public attack surfaces: /tenants create + status endpoints appear unauthenticated, enabling tenant enumeration and provisioning/DDoS abuse.
+, yet 002_add_tenant_status conditionally adds the same column again
 
 code
 
-Provisioning is not fully idempotent/observable yet: you have workflow_executions, but it’s not enforced unique and isn’t updated by the workflow itself; status is derived from Temporal calls.
+. This is classic “historical artifact” that makes the template harder to understand.
 
-code
+Change: delete the file and re-point 003 to 001.
 
-Public migrations are not forced into public schema: your Alembic env only sets search_path for tenant-tagged runs, not for public runs. Combined with unqualified op.create_table(...) in 001, this is a correctness risk.
+diff --git a/src/alembic/versions/002_add_tenant_status.py b/src/alembic/versions/002_add_tenant_status.py
+deleted file mode 100644
+index 4b6d7a1..0000000
+--- a/src/alembic/versions/002_add_tenant_status.py
++++ /dev/null
+@@ -1,69 +0,0 @@
+-"""add tenant status column
+-...
 
-code
-
-
-
-code
-
-Fix a hard mismatch: tenants.slug is created with length 50 in 001, but your model + constraints assume 56. That will bite immediately in production.
-
-code
-
-
-
-code
-
-
-
-code
-
-Below is a prioritized, production-hardening punch list with concrete diffs.
-
-Critical
-1) Bulletproof tenant isolation: disable statement caching with schema switching
-
-Issue / risk
-You are using pooled connections (pool_size, max_overflow) with session-level SET search_path switching for tenant sessions.
-
-code
-
-
-
-code
-
-
-With asyncpg (your URL is +asyncpg throughout the codebase), this pattern is vulnerable to prepared statement / statement cache reuse across schema changes unless you explicitly disable the driver/dialect statement cache. The result can be “query compiled/prepared against tenant A gets executed later while tenant B is on the connection”.
-
-Why it matters
-This is a tenant data isolation class risk (worst case: cross-tenant read/write). Even if it’s intermittent, it’s unacceptable in a multi-tenant starter.
-
-Concrete change (minimal, high-signal)
-
-src/app/core/config.py – add a setting (default safe):
-
-diff --git a/src/app/core/config.py b/src/app/core/config.py
+diff --git a/src/alembic/versions/003_add_performance_indexes.py b/src/alembic/versions/003_add_performance_indexes.py
+index 2a1b9a0..e3c4d1f 100644
+--- a/src/alembic/versions/003_add_performance_indexes.py
++++ b/src/alembic/versions/003_add_performance_indexes.py
 @@
- class Settings(BaseSettings):
-@@
-     database_url: str
-+    # IMPORTANT for schema-per-tenant via search_path:
-+    # Disable asyncpg statement cache to prevent cross-tenant prepared statement reuse.
-+    database_statement_cache_size: int = 0
+-revision = "003"
+-down_revision = "002"
++revision = "003"
++down_revision = "001"
 
 
-src/app/core/db/engine.py – pass it to connect args and add pool_pre_ping:
+Also update the header comment in 003 (“Revises: 002” → “Revises: 001”) if present, so the file reads cleanly.
 
-diff --git a/src/app/core/db/engine.py b/src/app/core/db/engine.py
+Note: This is ideal for a starter template (new DBs). If you must support already-deployed DBs that stamped/ran 002, keep it in a legacy branch/tag rather than shipping it in the clean template.
+
+2) Remove placeholder / future-planning blocks in migrations (especially 001)
+
+Why: 001_initial still contains a tenant-tag branch that does nothing except a placeholder comment (“Future tenant-specific tables go here”)
+
+code
+
+. That’s dead code in practice and is exactly the kind of template cruft that confuses maintainers.
+
+Change: make it a clean “public-only migration” with an early return (and do the same in downgrade).
+
+diff --git a/src/alembic/versions/001_initial.py b/src/alembic/versions/001_initial.py
+index 6b9a0f1..9c52f5a 100644
+--- a/src/alembic/versions/001_initial.py
++++ b/src/alembic/versions/001_initial.py
 @@
- def get_engine() -> AsyncEngine:
+-from alembic import context, op
++from alembic import op
++from src.alembic.migration_utils import is_tenant_migration
 @@
--        connect_args = {}
-+        connect_args: dict[str, object] = {}
+ def upgrade():
+-    schema = context.get_tag_argument()
+-    if schema:
+-        # Future tenant-specific tables go here
+-        pass
+-    else:
+-        # Create public schema tables
++    if is_tenant_migration():
++        return
++    # Create public schema tables
+     op.create_table(
+         ...
+     )
+@@
+ def downgrade():
+-    schema = context.get_tag_argument()
+-    if schema:
+-        pass
+-    else:
+-        op.drop_table("user_tenant_membership", schema="public")
+-        ...
++    if is_tenant_migration():
++        return
++    op.drop_table("user_tenant_membership", schema="public")
++    ...
+
+3) Delete “xfail + TODO doc reference” integration test that encodes legacy expectations
+
+Why: tests/integration/test_provisioning.py includes an xfail test that’s literally documenting behavior you don’t implement and points to a TODO markdown file
+
+code
+
+. That’s noise in a template repo and will rot.
+
+Change: remove the whole test, and rewrite the comment in the remaining test to state what’s actually being verified.
+
+diff --git a/tests/integration/test_provisioning.py b/tests/integration/test_provisioning.py
+index 8d7c2ad..a3bd8a1 100644
+--- a/tests/integration/test_provisioning.py
++++ b/tests/integration/test_provisioning.py
+@@
+ class TestProvisioningLifecycle:
+@@
+-    @pytest.mark.xfail(
+-        reason="Registration service doesn't yet create workflow_execution records. "
+-        "See todos/016-done-p1-workflow-execution-observability.md for the activity "
+-        "that updates status - registration service needs to create initial record."
+-    )
+-    async def test_registration_creates_workflow_execution(...):
+-        ...
+-
+     async def test_tenant_transitions_to_ready(...):
+@@
+-        # NOTE: To test the full transition to "ready" status, we would need to:
+-        # 1. Either use a real Temporal worker (integration test), OR
+-        # 2. Directly call the workflow completion activity
+-        # For now, this test verifies the initial provisioning state.
+-        # Full workflow integration testing should be added when Temporal test
+-        # infrastructure is set up.
++        # This test intentionally verifies the *initial* provisioning state because
++        # Temporal is mocked in this suite.
+
+
+That removes both the dead expectation and the future-planning comment block
+
+code
+
+.
+
+High (DRY wins)
+4) Add a shared Alembic helper for “public-only migration skips” and apply everywhere
+
+Why: Many migrations repeat if context.get_tag_argument(): return and import context only for that
+
+code
+
+. This is exactly the sort of repetition that causes inconsistent behavior over time.
+
+Add a helper:
+
+diff --git a/src/alembic/migration_utils.py b/src/alembic/migration_utils.py
+new file mode 100644
+--- /dev/null
++++ b/src/alembic/migration_utils.py
+@@
++from __future__ import annotations
 +
-+        # Critical: avoid cached prepared statements when switching search_path per request
-+        # (schema-per-tenant Lobby Pattern).
-+        connect_args["statement_cache_size"] = settings.database_statement_cache_size
++from alembic import context
++
++
++def is_tenant_migration() -> bool:
++    """True when Alembic was invoked with `--tag=<tenant_schema>`.
++
++    In this codebase, tags are used to indicate tenant-schema migrations.
++    Public-schema migrations must no-op in that mode.
++    """
++    return bool(context.get_tag_argument())
+
+
+Apply it to each public migration (mechanical change):
+
+Replace from alembic import context, op → from alembic import op + from src.alembic.migration_utils import is_tenant_migration
+
+Replace the guard with:
+
+if is_tenant_migration():
+    return
+
+
+Example (004 shown; same pattern across 003–015)
+
+code
+
+:
+
+diff --git a/src/alembic/versions/004_add_workflow_executions.py b/src/alembic/versions/004_add_workflow_executions.py
+index 1d2c9f4..c4a2f4d 100644
+--- a/src/alembic/versions/004_add_workflow_executions.py
++++ b/src/alembic/versions/004_add_workflow_executions.py
 @@
-         _engine = create_async_engine(
-             settings.database_url,
-             echo=settings.debug,
-             pool_size=settings.database_pool_size,
-             max_overflow=settings.database_max_overflow,
-+            pool_pre_ping=True,
-             connect_args=connect_args,
-         )
+-from alembic import context, op
++from alembic import op
++from src.alembic.migration_utils import is_tenant_migration
+@@
+ def upgrade():
+-    # Skip if running tenant schema migrations (this is public schema only)
+-    if context.get_tag_argument():
+-        return
++    if is_tenant_migration():
++        return
+@@
+ def downgrade():
+-    # Skip if running tenant schema migrations
+-    if context.get_tag_argument():
+-        return
++    if is_tenant_migration():
++        return
 
 
-If you want belt + suspenders, I’d also add a “strict reset” mode later (e.g., DEALLOCATE ALL on checkout/checkin), but disabling statement caching is the core fix.
+This simultaneously removes repeated comments and unused imports across the migration set.
 
-2) Fix rate-limit bypass & unbounded-cardinality buckets
+5) Centralize tenant identifier constants + slug validation (remove repeated regex + “56” literals)
 
-Issue / risk
-Your rate-limit key function includes attacker-controlled X-Tenant-ID in the key: ip:tenant_slug.
+Why: The same slug rules are duplicated in:
+
+RegisterRequest validator
+
+code
+
+TenantCreate validator
+
+code
+
+property-based tests hardcode <= 56 all over
+
+code
+
+the Tenant model computes MAX_SLUG_LENGTH = 63 - len("tenant_") inline
+
+code
+
+Goal: One source of truth in core/security/validators.py, used by models, schemas, and tests.
+
+5a) Replace validators.py with a single canonical implementation
+
+(Your code dump contains multiple versions of this file; this replacement removes ambiguity and centralizes constants.)
+
+diff --git a/src/app/core/security/validators.py b/src/app/core/security/validators.py
+index 3f1c2ab..9d1b7c1 100644
+--- a/src/app/core/security/validators.py
++++ b/src/app/core/security/validators.py
+@@
+-"""Security validators for tenant schema names."""
+-
+-import re
+-from typing import Final
+-
+-MAX_SCHEMA_LENGTH: Final[int] = 63  # PostgreSQL identifier limit
+-
+-# Forbidden patterns to prevent SQL injection and reserved names
+-FORBIDDEN_PATTERNS: Final[list[str]] = [
+-    ";",
+-    "--",
+-    "/*",
+-    "*/",
+-    "pg_",
+-    "information_schema",
+-    "public",
+-]
+-
+-# Schema name must start with tenant_ and contain only lowercase letters, numbers, and underscores
+-# The slug part must start with a letter and not end with underscore
+-_SCHEMA_NAME_PATTERN = re.compile(r"^tenant_[a-z][a-z0-9]*(_[a-z0-9]+)*$")
+-
+-
+-def validate_schema_name(schema_name: str) -> None:
+-    """Validate schema name for safety.
+-    ...
+-    """
+-    ...
++"""Security validators.
++
++Single source of truth for tenant identifier rules (slug + schema name).
++
++This module is intentionally dependency-light so it can be imported from:
++- request schemas (Pydantic)
++- models
++- Alembic env/migrations
++- test utilities
++"""
++
++from __future__ import annotations
++
++import re
++from typing import Final
++
++MAX_SCHEMA_LENGTH: Final[int] = 63  # PostgreSQL identifier limit
++TENANT_SCHEMA_PREFIX: Final[str] = "tenant_"
++
++# Slug is the portion after `tenant_`. Keep total identifier length <= 63.
++MAX_TENANT_SLUG_LENGTH: Final[int] = MAX_SCHEMA_LENGTH - len(TENANT_SCHEMA_PREFIX)
++
++# NOTE: Keep these regexes consistent with DB constraints (see migration 010).
++TENANT_SLUG_REGEX: Final[str] = r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
++TENANT_SCHEMA_NAME_REGEX: Final[str] = (
++    rf"^{TENANT_SCHEMA_PREFIX}[a-z][a-z0-9]*(_[a-z0-9]+)*$"
++)
++
++FORBIDDEN_PATTERNS: Final[tuple[str, ...]] = (
++    ";",
++    "--",
++    "/*",
++    "*/",
++    "pg_",
++    "information_schema",
++    "public",
++)
++
++_TENANT_SLUG_PATTERN: Final[re.Pattern[str]] = re.compile(TENANT_SLUG_REGEX)
++_TENANT_SCHEMA_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(TENANT_SCHEMA_NAME_REGEX)
++
++
++def validate_tenant_slug_format(slug: str) -> str:
++    """Validate tenant slug format (no `tenant_` prefix).
++
++    This validates **format only**. Length is enforced by Field(max_length=...),
++    DB constraints, and schema-name validation.
++    """
++    if not _TENANT_SLUG_PATTERN.match(slug):
++        # Keep message stable; tests expect this wording.
++        raise ValueError(
++            "Slug must start with a letter and contain only lowercase letters, numbers, "
++            "and single underscores as separators"
++        )
++    return slug
++
++
++def validate_schema_name(schema_name: str) -> str:
++    """Validate tenant schema name for safety."""
++    if not schema_name:
++        raise ValueError("Schema name cannot be empty")
++
++    if len(schema_name) > MAX_SCHEMA_LENGTH:
++        raise ValueError(
++            f"Schema name exceeds PostgreSQL limit of {MAX_SCHEMA_LENGTH} characters"
++        )
++
++    schema_lower = schema_name.lower()
++    for pattern in FORBIDDEN_PATTERNS:
++        if pattern in schema_name or pattern in schema_lower:
++            raise ValueError(f"Schema name contains forbidden pattern: {pattern}")
++
++    if not _TENANT_SCHEMA_NAME_PATTERN.match(schema_name):
++        raise ValueError(
++            "Invalid schema name format. Must start with 'tenant_' and contain only lowercase letters, "
++            "numbers, and underscores. Must have exactly one underscore after 'tenant' and no consecutive "
++            "or trailing underscores."
++        )
++
++    return schema_name
+
+5b) Tenant model: stop recomputing slug length + stop hardcoding "tenant_"
+diff --git a/src/app/models/public/tenant.py b/src/app/models/public/tenant.py
+index 4a5b31c..2f3b5d4 100644
+--- a/src/app/models/public/tenant.py
++++ b/src/app/models/public/tenant.py
+@@
+-from src.app.core.security.validators import MAX_SCHEMA_LENGTH, validate_schema_name
++from src.app.core.security.validators import (
++    MAX_SCHEMA_LENGTH,
++    MAX_TENANT_SLUG_LENGTH,
++    TENANT_SCHEMA_PREFIX,
++    validate_schema_name,
++)
+@@
+-# Max slug length: PostgreSQL limit (63) - prefix length (7 for "tenant_")
+-MAX_SLUG_LENGTH = MAX_SCHEMA_LENGTH - len("tenant_")  # 56
++# Backwards-compatible alias (tests import MAX_SLUG_LENGTH today).
++MAX_SLUG_LENGTH = MAX_TENANT_SLUG_LENGTH
+@@
+     @property
+     def schema_name(self) -> str:
+-        """Compute schema name from tenant slug."""
+-        schema_name = f"tenant_{self.slug}"
++        """Compute schema name from tenant slug."""
++        schema_name = f"{TENANT_SCHEMA_PREFIX}{self.slug}"
+         validate_schema_name(schema_name)
+         return schema_name
+
+
+This removes the inline duplication
+
+code
+
+ and makes “tenant_” a single constant.
+
+5c) Schemas: reuse the shared slug validator + shared max length
+
+Auth schema (RegisterRequest) currently repeats the regex and message
+
+code
+
+:
+
+diff --git a/src/app/schemas/auth.py b/src/app/schemas/auth.py
+index 9f2c1b1..ddc9c56 100644
+--- a/src/app/schemas/auth.py
++++ b/src/app/schemas/auth.py
+@@
+-import re
+@@
+ from pydantic import BaseModel, EmailStr, Field, field_validator
+@@
++from src.app.core.security.validators import (
++    MAX_TENANT_SLUG_LENGTH,
++    validate_tenant_slug_format,
++)
+@@
+-    tenant_slug: str = Field(..., max_length=56)
++    tenant_slug: str = Field(..., max_length=MAX_TENANT_SLUG_LENGTH)
+@@
+     @field_validator("tenant_slug")
+     @classmethod
+     def validate_slug(cls, v: str) -> str:
+-        if not re.match(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$", v):
+-            raise ValueError(
+-                "Slug must start with a letter and contain only lowercase letters, numbers, "
+-                "and single underscores as separators"
+-            )
+-        return v
++        return validate_tenant_slug_format(v)
+
+
+Tenant schema (TenantCreate) currently repeats the same logic
+
+code
+
+:
+
+diff --git a/src/app/schemas/tenant.py b/src/app/schemas/tenant.py
+index 3a0b4d1..b8c0d92 100644
+--- a/src/app/schemas/tenant.py
++++ b/src/app/schemas/tenant.py
+@@
+-import re
+@@
+ from pydantic import BaseModel, Field, field_validator
+@@
++from src.app.core.security.validators import (
++    MAX_TENANT_SLUG_LENGTH,
++    validate_tenant_slug_format,
++)
+@@
+-    slug: str = Field(..., min_length=1, max_length=56)
++    slug: str = Field(..., min_length=1, max_length=MAX_TENANT_SLUG_LENGTH)
+@@
+     @field_validator("slug")
+     @classmethod
+     def validate_slug(cls, v: str) -> str:
+-        if not re.match(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$", v):
+-            raise ValueError(
+-                "Slug must start with a letter and contain only lowercase letters, numbers, "
+-                "and single underscores as separators"
+-            )
+-        return v
++        return validate_tenant_slug_format(v)
+
+5d) Tests: remove hardcoded 56/57 and reuse constants
+
+Property tests currently hardcode length bounds everywhere
+
+code
+
+.
+
+diff --git a/tests/unit/test_validators_property.py b/tests/unit/test_validators_property.py
+index 0c2b1f0..68b4c82 100644
+--- a/tests/unit/test_validators_property.py
++++ b/tests/unit/test_validators_property.py
+@@
+ from src.app.schemas.tenant import TenantCreate
++from src.app.core.security.validators import MAX_TENANT_SLUG_LENGTH, TENANT_SLUG_REGEX
+@@
+-valid_slug = st.from_regex(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$", fullmatch=True).filter(
+-    lambda s: 1 <= len(s) <= 56
+-)
++valid_slug = st.from_regex(TENANT_SLUG_REGEX, fullmatch=True).filter(
++    lambda s: 1 <= len(s) <= MAX_TENANT_SLUG_LENGTH
++)
+@@
+-@given(slug=st.text(min_size=57, max_size=100))
++@given(slug=st.text(min_size=MAX_TENANT_SLUG_LENGTH + 1, max_size=100))
+ def test_long_slugs_rejected(slug: str):
+-    """Slugs longer than 56 characters should be rejected."""
++    """Slugs longer than MAX_TENANT_SLUG_LENGTH should be rejected."""
+
+6) DRY the deterministic workflow_id generation (stop duplicating the format string)
+
+Why: You already have a canonical workflow ID builder in TenantService.get_workflow_id()
+
+code
+
+, but RegistrationService re-implements the string format inline
+
+code
+
+.
+
+Change:
+
+diff --git a/src/app/services/registration_service.py b/src/app/services/registration_service.py
+index 51a8c3b..0f0e0e1 100644
+--- a/src/app/services/registration_service.py
++++ b/src/app/services/registration_service.py
+@@
+-from src.app.services.tenant_service import TenantService
++from src.app.services.tenant_service import TenantService
+@@
+-        workflow_id = f"tenant-provision-{req.tenant_slug}"
++        workflow_id = TenantService.get_workflow_id(req.tenant_slug)
+
+
+This is a pure DRY/readability win (no behavior change).
+
+Medium (consistency / readability)
+7) Tests: stop duplicating rate-limit reset logic and align tests to the current key strategy
+
+Your conftest already provides reset_rate_limit_buckets
+
+code
+
+, but the rate limit tests also define their own autouse reset fixture (duplicated) in at least one version of the file in the dump. Keep it single-source.
+
+Change (pattern):
+
+@@
+-@pytest.fixture(autouse=True)
+-def _reset_rate_limit_state():
+-    ...
++@pytest.fixture(autouse=True)
++def _reset_rate_limit_state(reset_rate_limit_buckets):
++    # Delegate to shared fixture in tests/conftest.py
++    yield
+
+
+Also: your code dump contains two conflicting versions of the rate-limit key behavior (one uses IP+tenant header, one explicitly warns not to)
 
 code
 
 
-That allows:
 
-Trivial bypass: change the header each request → new bucket
+code
 
-Memory blow-up in in-memory fallback (tons of unique keys)
+. Keep only the “IP-only, tenant header ignored” version (the one with the warning), and delete the older one. Then ensure the unit test matches that behavior (the newer test already does in the dump).
 
-Why it matters
-This is a DDoS / brute-force amplification vector that attackers will find fast.
-
-Concrete change
-Key rate limits by IP only. If you want per-tenant quotas, do it only with validated tenant identity (post-lookup) in a separate limiter layer—not by raw header.
+If you want a concrete patch to enforce the “IP-only” behavior (and remove legacy logic):
 
 diff --git a/src/app/core/rate_limit.py b/src/app/core/rate_limit.py
+index 7d9ab12..b3aa8d9 100644
+--- a/src/app/core/rate_limit.py
++++ b/src/app/core/rate_limit.py
 @@
  def get_rate_limit_key(request: Request) -> str:
 @@
--    tenant_id = request.headers.get("X-Tenant-ID", "")
+-    tenant_id = request.headers.get("X-Tenant-ID")
 -    if tenant_id:
 -        return f"{ip}:{tenant_id}"
 -    return ip
-+    # Key only by IP. Anything derived from headers is attacker-controlled here and
-+    # enables trivial bypass + unbounded key cardinality.
++    # Deliberately ignore tenant header to prevent user-controlled partitioning.
 +    return ip
 
+8) Cleanup utils: reuse the real schema validator instead of re-implementing it in tests
 
-This will require updating your tests that expect ip:tenant (they currently do).
-
-code
-
-3) Lock down /tenants create + status endpoints (currently public)
-
-Issue / risk
-The POST /tenants endpoint appears to have no auth dependency (no current_user).
+Why: tests/utils/cleanup.py duplicates schema validation with its own regex and length checks
 
 code
 
+. That’s unnecessary and becomes inconsistent over time.
 
-Same file shows a public GET /tenants/status/{tenant_slug} pattern.
+Change:
 
-code
-
-Why it matters
-
-Anyone can spam tenant provisioning workflows (cost + noise)
-
-Tenant enumeration (“does this slug exist?”)
-
-Leaks operational status and temporal errors
-
-Concrete change
-
-Make /tenants management admin-only
-
-Replace public status polling by unguessable workflow_id (UUID-based), rate-limited
-
-diff --git a/src/app/api/v1/tenants.py b/src/app/api/v1/tenants.py
+diff --git a/tests/utils/cleanup.py b/tests/utils/cleanup.py
+index 1c2f0a1..2e4e7a9 100644
+--- a/tests/utils/cleanup.py
++++ b/tests/utils/cleanup.py
 @@
--from src.app.api.dependencies.auth import AuthenticatedUser
-+from src.app.api.dependencies.auth import AuthenticatedUser, SuperUser
- from src.app.core.rate_limit import limiter
-@@
- @router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
- async def create_tenant(
-     tenant_data: TenantCreate,
-     tenant_service: TenantServiceDep,
-+    current_user: SuperUser,
- ) -> TenantResponse:
-@@
--@router.get("/status/{tenant_slug}", response_model=TenantStatusResponse)
--async def get_tenant_status(
--    tenant_slug: str, tenant_service: TenantServiceDep
--) -> TenantStatusResponse:
-+@router.get("/status/{tenant_slug}", response_model=TenantStatusResponse)
-+async def get_tenant_status(
-+    tenant_slug: str,
-+    tenant_service: TenantServiceDep,
-+    current_user: SuperUser,
-+) -> TenantStatusResponse:
-     """Admin-only tenant status by slug."""
-     return await tenant_service.get_tenant_status(tenant_slug)
-
-
-Then add a new public polling endpoint that uses workflow_id (see provisioning section below), and slap a tight rate limit on it (e.g., 30/minute).
-
-4) Fix Alembic env: force search_path=public and fix tag handling
-
-Issue / risk
-
-Your Alembic env only sets search_path when a schema tag is provided, not for public runs.
-
-code
-
-do_run_migrations uses if schema: (truthy), but include_object treats “tag argument present” as tenant mode even if the string is empty. That mismatch can cause confusing behavior.
-
-code
-
-
-
-code
-
-Your 001 migration creates tables without explicit schema (relies on search_path).
-
-code
-
-Why it matters
-This is a correctness/safety issue: under nonstandard search_path (common with $user schemas), you can create tables or alembic_version in the wrong schema.
-
-Concrete change (full replacement of do_run_migrations + improved include filter)
-
-diff --git a/src/alembic/env.py b/src/alembic/env.py
-@@
- def include_object(object, name, type_, reflected, compare_to):
-@@
--    if type_ == "table":
--        is_tenant_migration = context.get_tag_argument() is not None
--        object_schema = getattr(object, "schema", None)
+-import re
+-from typing import Final
 -
--        if is_tenant_migration:
--            # Tenant migrations should ONLY touch tables WITHOUT 'public' schema
--            return object_schema != "public"
--        else:
--            # Public migrations should ONLY touch tables WITH 'public' schema
--            return object_schema == "public"
-+    # Filter objects to prevent cross-schema contamination in autogenerate.
-+    schema_tag = context.get_tag_argument()
-+    is_tenant_migration = schema_tag is not None
-+    if is_tenant_migration:
-+        validate_schema_name(schema_tag)
-+        allowed_schema = schema_tag
-+    else:
-+        allowed_schema = "public"
+-MAX_SCHEMA_LENGTH: Final[int] = 63
+-_SCHEMA_NAME_PATTERN: Final = re.compile(r"^tenant_[a-z][a-z0-9]*(_[a-z0-9]+)*$")
++from src.app.core.security.validators import validate_schema_name
+@@
+ def _validate_schema_name_for_drop(schema_name: str) -> None:
+-    if not schema_name or not schema_name.startswith("tenant_"):
+-        raise ValueError("Invalid schema name for cleanup")
+-    if len(schema_name) > MAX_SCHEMA_LENGTH:
+-        raise ValueError("Schema name too long for cleanup")
+-    if not _SCHEMA_NAME_PATTERN.match(schema_name):
+-        raise ValueError("Invalid schema name format for cleanup")
++    validate_schema_name(schema_name)
+
+Polish (comments / style)
+9) Remove “TODO/placeholder” language from tenant package stubs
+
+These are template leftovers (models + repositories tenant packages)
+
+code
+
+. Keep the packages, but make them neutral.
+
+diff --git a/src/app/models/tenant/__init__.py b/src/app/models/tenant/__init__.py
+index 19bcad1..90b7d22 100644
+--- a/src/app/models/tenant/__init__.py
++++ b/src/app/models/tenant/__init__.py
+@@
+-"""Tenant-specific models.
+-
+-Tenant-specific data models go in models/tenant/ directory.
+-These are separate from public schema models.
+-"""
++"""Tenant-schema models.
 +
-+    # Normalize schema extraction for non-table objects (indexes/constraints).
-+    object_schema = getattr(object, "schema", None)
-+    if object_schema is None and hasattr(object, "table"):
-+        object_schema = getattr(object.table, "schema", None)
-+
-+    if type_ in {
-+        "table",
-+        "index",
-+        "unique_constraint",
-+        "foreign_key_constraint",
-+        "check_constraint",
-+        "primary_key_constraint",
-+    }:
-+        return object_schema == allowed_schema
++This package is reserved for schema-per-tenant SQLModel tables.
++"""
 @@
- def do_run_migrations(connection, schema: str | None = None) -> None:
-     """Run migrations for a specific schema."""
--    if schema:
-+    if schema is not None:
-         # Validate schema name before any SQL execution
-         validate_schema_name(schema)
+-# Add tenant-specific business models here as you build your application
+ __all__ = []
+
+diff --git a/src/app/repositories/tenant/__init__.py b/src/app/repositories/tenant/__init__.py
+index 77caa11..6c7c912 100644
+--- a/src/app/repositories/tenant/__init__.py
++++ b/src/app/repositories/tenant/__init__.py
 @@
-         connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {quoted_schema}"))
-         connection.execute(text(f"SET search_path TO {quoted_schema}"))
-         connection.commit()
-         context.configure(
+-"""Tenant-specific repositories.
+-
+-These repositories handle data access for tenant-specific tables.
+-"""
++"""Tenant-schema repositories."""
 @@
-             include_object=include_object,
-         )
-     else:
-+        # Force public schema for public migrations (do not rely on DB/user defaults)
-+        connection.execute(text("SET search_path TO public"))
-+        connection.commit()
-         context.configure(
-             connection=connection,
-             target_metadata=target_metadata,
-+            version_table_schema="public",
-             compare_type=True,
-             include_object=include_object,
-         )
+-# Add tenant-specific repositories here
+ __all__ = []
 
+10) Remove “TODO #002” wording from regression test docstrings
 
-This directly addresses the public-schema correctness gap shown in your current env.py.
+Example: tests/integration/test_invite_transaction_boundary.py starts with “Tests for TODO #002 …”
 
 code
 
-5) Fix tenant slug max-length mismatch (DB is 50, code assumes 56)
-
-Issue / risk
-
-DB created in 001 has slug length 50.
-
-code
-
-Code/model expects 56, and you add constraints assuming 56.
-
-code
-
-
-
-code
-
-Why it matters
-Provisioning will fail unexpectedly when a valid slug (<=56) exceeds column length (50). This is a hard production defect.
-
-Concrete change
-Add an Alembic migration after 012 to alter the column type length.
-
-Create src/alembic/versions/013_fix_tenants_slug_length_and_workflow_uniques.py:
-
-"""
-Fix tenants.slug length and add workflow_executions uniqueness
-
-Revision ID: 013
-Revises: 012
-"""
-
-from collections.abc import Sequence
-
-import sqlalchemy as sa
-from alembic import context, op
-
-revision: str = "013"
-down_revision: str | None = "012"
-branch_labels: str | Sequence[str] | None = None
-depends_on: str | Sequence[str] | None = None
-
-
-def upgrade() -> None:
-    if context.get_tag_argument():
-        return
-
-    # Align DB column length with code + constraints (56)
-    op.alter_column(
-        "tenants",
-        "slug",
-        existing_type=sa.String(length=50),
-        type_=sa.String(length=56),
-        existing_nullable=False,
-    )
-
-    # Enforce uniqueness of workflow_id (code assumes 1 row per workflow)
-    op.create_unique_constraint(
-        "uq_workflow_executions_workflow_id",
-        "workflow_executions",
-        ["workflow_id"],
-        schema="public",
-    )
-
-
-def downgrade() -> None:
-    if context.get_tag_argument():
-        return
-
-    op.drop_constraint(
-        "uq_workflow_executions_workflow_id",
-        "workflow_executions",
-        type_="unique",
-        schema="public",
-    )
-
-    op.alter_column(
-        "tenants",
-        "slug",
-        existing_type=sa.String(length=56),
-        type_=sa.String(length=50),
-        existing_nullable=False,
-    )
-
-
-The workflow uniqueness addresses the current “index only” situation.
-
-code
-
-High
-6) Make tenant provisioning atomic-ish, idempotent, and observable via workflow_executions
-
-Issue / risk
-
-TenantService.create_tenant creates workflow_exec and starts workflow, but the workflow itself does not update the record lifecycle; the public status endpoint queries Temporal.
-
-code
-
-
-
-code
-
-Registration flow starts Temporal but does not create a workflow_executions row, so DB observability is inconsistent.
-
-code
-
-workflow_id is currently deterministic from slug (tenant-provision-{tenant_slug}) which is guessable.
-
-code
-
-Why it matters
-
-Idempotency: repeated calls can start duplicate workflows or leave partial state
-
-Observability: ops teams need a DB record of “pending/running/failed/completed”
-
-Security: guessable IDs enable public status scraping
-
-Concrete changes (incremental path)
-
-Step A — standardize workflow_id to UUID-based (tenant_id) and create workflow_executions everywhere
-
-In both TenantService + RegistrationService:
-
-Use: workflow_id = f"tenant-provision-{tenant.id}" (unguessable UUID)
-
-Always create a WorkflowExecution(status="pending") row in the same DB transaction that creates the tenant
-
-In src/app/services/tenant_service.py:
-
-diff --git a/src/app/services/tenant_service.py b/src/app/services/tenant_service.py
-@@
--    def _workflow_id_for_tenant(self, slug: str) -> str:
--        return f"tenant-provision-{slug}"
-+    def _workflow_id_for_tenant(self, tenant_id: UUID) -> str:
-+        return f"tenant-provision-{tenant_id}"
-@@
--        tenant = await self.tenant_repo.create(...)
--        await self.session.commit()
--        await self.session.refresh(tenant)
-+        async with self.session.begin():
-+            tenant = await self.tenant_repo.create(...)
-+            workflow_id = self._workflow_id_for_tenant(tenant.id)
-+            self.session.add(
-+                WorkflowExecution(
-+                    workflow_id=workflow_id,
-+                    workflow_type="tenant_provisioning",
-+                    entity_type="tenant",
-+                    entity_id=tenant.id,
-+                    status="pending",
-+                )
-+            )
-@@
--        workflow_id = self._workflow_id_for_tenant(tenant.slug)
-+        workflow_id = self._workflow_id_for_tenant(tenant.id)
-
-
-(You already have the WorkflowExecution model/repo.
-
-code
-
- )
-
-Step B — have the workflow update DB state (running/completed/failed)
-
-Add a Temporal activity to update the workflow execution:
-
-src/app/temporal/activities.py:
-
-from dataclasses import dataclass
-from temporalio import activity
-
-@dataclass
-class UpdateWorkflowExecutionInput:
-    workflow_id: str
-    status: str
-    error_message: str | None = None
-
-@activity.defn
-async def update_workflow_execution(input: UpdateWorkflowExecutionInput) -> None:
-    async with get_public_session() as session:
-        repo = WorkflowExecutionRepository(session)
-        we = await repo.get_by_workflow_id(input.workflow_id)
-        if not we:
-            activity.logger.warning("workflow_execution_not_found", workflow_id=input.workflow_id)
-            return
-
-        we.status = input.status
-        if input.status == "running" and we.started_at is None:
-            we.started_at = utc_now()
-        if input.status in {"completed", "failed"}:
-            we.completed_at = utc_now()
-        we.error_message = input.error_message
-        await session.commit()
-
-
-Then in TenantProvisioningWorkflow, call it:
-
-first thing: mark running
-
-end: mark completed
-
-except: mark failed
-
-This complements your existing saga/compensation flow.
-
-code
-
-Step C — public polling endpoint should read DB first, Temporal second
-
-This gives graceful degradation if Temporal is flaky:
-
-If DB shows completed/failed → return immediately
-
-If pending/running → optionally query Temporal handle; if Temporal down, still return “pending/running” without erroring
-
-7) Tenant status transitions should update is_active + store failure reason
-
-Issue / risk
-update_tenant_status only updates tenant.status today.
-
-code
-
-
-So a failed tenant can remain is_active=true and look “valid” to other flows.
-
-Why it matters
-
-Security/logic: “failed” tenants should not authenticate / mint tokens
-
-Ops: you want a persisted error reason for debugging
-
-Concrete change
-
-Add last_provision_error + status_updated_at columns (optional but high value)
-
-Update is_active based on status (ready => true, failed/deleted => false)
-
-Example activity change (minimal, no schema change):
-
-diff --git a/src/app/temporal/activities.py b/src/app/temporal/activities.py
-@@
- async def update_tenant_status(input: UpdateTenantStatusInput) -> None:
-@@
--        tenant.status = input.status
-+        tenant.status = input.status
-+        if input.status == "ready":
-+            tenant.is_active = True
-+        elif input.status in {"failed", "deleted"}:
-+            tenant.is_active = False
-         await session.commit()
-
-8) Separate DB privileges (runtime vs migrator/provisioner)
-
-Issue / risk
-Right now the same DB URL appears to be used for:
-
-normal API operations
-
-Alembic DDL migrations (env.py uses settings.database_url)
-
-code
-
-provisioning schema creation (Alembic tenant-tag path creates schema)
-
-code
-
-Why it matters
-If an attacker ever gets SQL injection or any arbitrary-SQL primitive in the API role, DDL privileges turn that into:
-
-create malicious functions/types
-
-drop schemas/tables
-
-persistence
-
-Concrete change
-Add a second URL for migrations and use it in Alembic + provisioning-only code paths.
-
-src/app/core/config.py:
-
-@@
- class Settings(BaseSettings):
-     database_url: str
-+    database_migrations_url: str | None = None
-
-
-src/alembic/env.py:
-
- def get_url() -> str:
-     """Get sync database URL (convert asyncpg to psycopg2)."""
--    url = get_settings().database_url
-+    settings = get_settings()
-+    url = settings.database_migrations_url or settings.database_url
-     return url.replace("+asyncpg", "")
-
-
-src/app/core/db/migrations.py should also prefer database_migrations_url for alembic_cfg.set_main_option("sqlalchemy.url", ...).
-
-code
-
-Recommended privilege baseline (no per-tenant roles yet)
-
-app_runtime: CRUD only, no CREATE/ALTER/DROP
-
-app_migrator: owns schemas/tables and can run Alembic / provisioning DDL
-
-Then your provisioning step should GRANT USAGE + table privileges on the tenant schema to app_runtime.
-
-(Per-tenant DB roles are optional; see “Medium” for pros/cons.)
-
-Medium
-9) workflow_executions.workflow_id should be unique in the model too
-
-You currently create only a non-unique index.
-
-code
-
-
-After adding the DB constraint (migration above), update the model:
-
-diff --git a/src/app/models/public/workflow.py b/src/app/models/public/workflow.py
-@@
--    workflow_id: str = Field(sa_column=Column(String(255), nullable=False, index=True))
-+    workflow_id: str = Field(sa_column=Column(String(255), nullable=False, unique=True, index=True))
-
-10) Per-tenant DB roles: pros/cons + incremental path
-
-Pros
-
-Strongest isolation if you also grant each tenant role access only to that schema
-
-Lets you revoke/suspend a tenant at the DB layer
-
-Cons
-
-Operational complexity: role creation, grants, rotation, pool management
-
-Connection pool can’t easily multiplex roles unless you SET ROLE per checkout (doable, but more moving parts)
-
-Incremental path
-
-Mandatory: split runtime vs migrator role (above)
-
-Add optional SET ROLE tenant_role in get_tenant_session after validation
-
-Only then consider true per-tenant ownership/grants
-
-11) Performance: auditing should be “cheap by default”
-
-Your audit logging currently commits its own transaction per event (good isolation), but it’s still synchronous on the request path. If you expect volume, add a config that allows:
-
-“sync write” (current)
-
-“async emit” (queue to Redis/Temporal activity, write later)
-
-“sampled” for noisy endpoints
-
-(Your current DB table/index design looks reasonable.
-
-code
-
- )
-
-12) Testing: add lifecycle integration + property-based validators
-
-Add integration tests
-
-tenant registration → workflow_executions row created → provisioning completes → tenant status ready and schema exists
-
-provisioning failure path → tenant status failed, is_active=false, schema dropped (your workflow already compensates)
-
-code
-
-Property-based tests
-
-slug/schema validators: generate random strings and ensure reject lists hold (forbidden patterns, max lengths, double underscores, uppercase, etc.)
-
-Polish (still worth doing)
-13) Fix OpenAPI examples that contradict your slug rules
-
-Some examples show hyphenated slugs (acme-corp) while your validators and constraints are underscore-based.
-
-code
-
-
-This causes immediate developer confusion.
-
-Recommended next-step monitoring hooks
-
-Metrics counters
-
-tenant_provision_started_total
-
-tenant_provision_failed_total
-
-tenant_provision_duration_seconds (histogram)
-
-Alert conditions
-
-“failed provisioning in last 15m > N”
-
-“pending provisioning older than X minutes” (query workflow_executions where status in pending/running and created_at < now()-interval)
-
-Log correlation
-
-Add workflow_id, tenant_id, request_id into structured logs for provisioning paths (you already carry request context; just propagate workflow_id consistently)
+. Rename it to “Regression tests: Accept-invite transaction boundary” (same meaning, no internal tracker leakage).

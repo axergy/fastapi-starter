@@ -1,4 +1,4 @@
-"""Tests for TODO #002: Missing Transaction Boundary in Accept Invite Flow.
+"""Regression tests: Accept-invite transaction boundary.
 
 This test suite validates that:
 1. Tenant validation happens WITHIN the transaction

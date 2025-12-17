@@ -10,7 +10,8 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 
-from alembic import context, op
+from alembic import op
+from src.alembic.migration_utils import is_tenant_migration
 
 revision: str = "012"
 down_revision: str | None = "011"
@@ -19,8 +20,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Skip if running tenant schema migrations (this is public schema only)
-    if context.get_tag_argument():
+    if is_tenant_migration():
         return
 
     # Add assumed_by_user_id column to track identity assumption
@@ -51,8 +51,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Skip if running tenant schema migrations
-    if context.get_tag_argument():
+    if is_tenant_migration():
         return
 
     # Drop index

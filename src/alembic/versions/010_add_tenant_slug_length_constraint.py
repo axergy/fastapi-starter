@@ -12,7 +12,8 @@ Max slug length = 63 - 7 (len("tenant_")) = 56 characters
 
 from collections.abc import Sequence
 
-from alembic import context, op
+from alembic import op
+from src.alembic.migration_utils import is_tenant_migration
 
 revision: str = "010"
 down_revision: str | None = "009"
@@ -24,8 +25,7 @@ MAX_SLUG_LENGTH = 56
 
 
 def upgrade() -> None:
-    # Skip if running tenant schema migrations (tag argument present)
-    if context.get_tag_argument():
+    if is_tenant_migration():
         return
 
     # Add CHECK constraint for slug length to prevent schema name collisions
@@ -46,8 +46,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Skip if running tenant schema migrations
-    if context.get_tag_argument():
+    if is_tenant_migration():
         return
 
     op.drop_constraint("ck_tenants_slug_format", "tenants", type_="check")

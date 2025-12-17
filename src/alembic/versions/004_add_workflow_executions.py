@@ -11,7 +11,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-from alembic import context, op
+from alembic import op
+from src.alembic.migration_utils import is_tenant_migration
 
 revision: str = "004"
 down_revision: str | None = "003"
@@ -20,9 +21,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # This table is for public schema only
-    # Skip if running tenant schema migrations (tag argument present)
-    if context.get_tag_argument():
+    if is_tenant_migration():
         return
 
     op.create_table(
@@ -57,8 +56,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Skip if running tenant schema migrations
-    if context.get_tag_argument():
+    if is_tenant_migration():
         return
 
     op.drop_index(
