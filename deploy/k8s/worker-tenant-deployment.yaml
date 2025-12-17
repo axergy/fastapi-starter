@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker-tenant
+  labels:
+    app: temporal-worker
+    workload: tenant
+spec:
+  replicas: 2  # Scale based on tenant operations load
+  selector:
+    matchLabels:
+      app: temporal-worker
+      workload: tenant
+  template:
+    metadata:
+      labels:
+        app: temporal-worker
+        workload: tenant
+    spec:
+      containers:
+        - name: worker
+          image: app:latest
+          command: ["python", "-m", "src.app.temporal.worker", "--workload", "tenant"]
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          env:
+            # Temporal Configuration
+            - name: TEMPORAL_HOST
+              value: "temporal:7233"
+            - name: TEMPORAL_NAMESPACE
+              value: "default"
+            - name: TEMPORAL_QUEUE_PREFIX
+              value: "saas"
+            - name: TEMPORAL_QUEUE_SHARDS
+              value: "1"  # Start with 1, scale to 32/64 as needed
+
+            # Database Configuration
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: database-url
+
+            # Application Configuration
+            - name: APP_ENV
+              value: "production"
+            - name: DEBUG
+              value: "false"
+
+            # Stripe Configuration (for tenant provisioning)
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: stripe-secret-key
+
+            # Email Configuration (for welcome emails)
+            - name: SMTP_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: smtp-host
+            - name: SMTP_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: smtp-port
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: smtp-username
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: smtp-password
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30
+
+      # Node affinity (optional - spread across zones)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: workload
+                      operator: In
+                      values:
+                        - tenant
+                topologyKey: kubernetes.io/hostname

@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker-jobs
+  labels:
+    app: temporal-worker
+    workload: jobs
+spec:
+  replicas: 1  # Jobs are less frequent (cleanup, cron) - single worker sufficient
+  selector:
+    matchLabels:
+      app: temporal-worker
+      workload: jobs
+  template:
+    metadata:
+      labels:
+        app: temporal-worker
+        workload: jobs
+    spec:
+      containers:
+        - name: worker
+          image: app:latest
+          command: ["python", "-m", "src.app.temporal.worker", "--workload", "jobs"]
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            # Temporal Configuration
+            - name: TEMPORAL_HOST
+              value: "temporal:7233"
+            - name: TEMPORAL_NAMESPACE
+              value: "default"
+            - name: TEMPORAL_QUEUE_PREFIX
+              value: "saas"
+            - name: TEMPORAL_QUEUE_SHARDS
+              value: "1"  # Jobs queue doesn't use sharding
+
+            # Database Configuration
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: database-url
+
+            # Application Configuration
+            - name: APP_ENV
+              value: "production"
+            - name: DEBUG
+              value: "false"
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30

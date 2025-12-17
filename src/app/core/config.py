@@ -97,6 +97,8 @@ class Settings(BaseSettings):
     temporal_host: str = "localhost:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "main-queue"
+    temporal_queue_prefix: str = "saas"
+    temporal_queue_shards: int = 1  # Start with 1 for backward compatibility, scale to 32/64
 
     # CORS
     cors_origins: list[str] = ["http://localhost:3000"]

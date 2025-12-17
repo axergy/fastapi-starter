@@ -8,6 +8,7 @@ from src.app.core.config import get_settings
 from src.app.models.public import Tenant
 from src.app.repositories import TenantRepository
 from src.app.temporal.client import get_temporal_client
+from src.app.temporal.routing import QueueKind, route_for_tenant
 from src.app.temporal.workflows import TenantDeletionWorkflow
 
 
@@ -47,11 +48,20 @@ class AdminService:
         client = await get_temporal_client()
         workflow_id = f"tenant-deletion-{tenant_id}"
 
+        # Route to tenant-specific task queue with fairness
+        route = route_for_tenant(
+            tenant_id=str(tenant_id),
+            namespace=settings.temporal_namespace,
+            prefix=settings.temporal_queue_prefix,
+            shards=settings.temporal_queue_shards,
+            kind=QueueKind.TENANT,
+        )
+
         await client.start_workflow(
             TenantDeletionWorkflow.run,
-            args=[str(tenant_id)],
+            str(tenant_id),
             id=workflow_id,
-            task_queue=settings.temporal_task_queue,
+            task_queue=route.task_queue,
         )
 
         return workflow_id

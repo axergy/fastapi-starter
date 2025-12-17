@@ -14,6 +14,7 @@ from src.app.repositories import UserRepository
 from src.app.services.email_verification_service import EmailVerificationService
 from src.app.services.tenant_service import TenantService
 from src.app.temporal.client import get_temporal_client
+from src.app.temporal.routing import QueueKind, route_for_tenant
 from src.app.temporal.workflows import TenantProvisioningWorkflow
 
 logger = get_logger(__name__)
@@ -84,12 +85,21 @@ class RegistrationService:
         client = await get_temporal_client()
         workflow_id = TenantService.get_workflow_id(tenant_slug)
 
+        # Route to tenant-specific task queue with fairness
+        route = route_for_tenant(
+            tenant_id=str(tenant.id),
+            namespace=settings.temporal_namespace,
+            prefix=settings.temporal_queue_prefix,
+            shards=settings.temporal_queue_shards,
+            kind=QueueKind.TENANT,
+        )
+
         try:
             await client.start_workflow(
                 TenantProvisioningWorkflow.run,
                 args=[str(tenant.id), str(user.id)],
                 id=workflow_id,
-                task_queue=settings.temporal_task_queue,
+                task_queue=route.task_queue,
             )
         except Exception as e:
             # Workflow start failed, but DB is committed - tenant exists in "provisioning" state

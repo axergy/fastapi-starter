@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-worker-tenant
+  labels:
+    app: temporal-worker
+    workload: tenant
+spec:
+  selector:
+    app: temporal-worker
+    workload: tenant
+  ports:
+    - name: health
+      port: 8001
+      targetPort: 8001
+  type: ClusterIP
