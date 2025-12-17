@@ -39,7 +39,7 @@ def upgrade() -> None:
         sa.Column("request_id", sa.String(length=36), nullable=True),
         sa.Column("status", sa.String(length=20), nullable=False, server_default="success"),
         sa.Column("error_message", sa.String(length=1000), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(
             ["tenant_id"],
             ["public.tenants.id"],

@@ -6,7 +6,6 @@ Uses polyfactory for type-safe test data generation.
 
 import asyncio
 from collections.abc import AsyncGenerator
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -58,9 +57,7 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
     test_engine = create_async_engine(settings.database_url, poolclass=NullPool)
 
     # Run public schema migrations to ensure tables exist
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as pool:
-        await loop.run_in_executor(pool, run_migrations_sync, None)
+    await asyncio.to_thread(run_migrations_sync, None)
 
     yield test_engine
     await test_engine.dispose()
@@ -96,9 +93,7 @@ async def test_tenant(engine: AsyncEngine, db_session: AsyncSession) -> AsyncGen
     schema_name = tenant.schema_name
 
     # Run migrations for tenant schema (creates empty schema)
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as pool:
-        await loop.run_in_executor(pool, run_migrations_sync, schema_name)
+    await asyncio.to_thread(run_migrations_sync, schema_name)
 
     yield tenant.slug
 
@@ -124,9 +119,7 @@ async def test_tenant_obj(engine: AsyncEngine, db_session: AsyncSession) -> Asyn
     schema_name = tenant.schema_name
 
     # Run migrations for tenant schema (creates empty schema)
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as pool:
-        await loop.run_in_executor(pool, run_migrations_sync, schema_name)
+    await asyncio.to_thread(run_migrations_sync, schema_name)
 
     yield tenant
 

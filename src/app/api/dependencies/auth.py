@@ -128,11 +128,20 @@ async def _validate_access_token(
             with contextlib.suppress(ValueError):
                 started_at = datetime.fromisoformat(assumed_identity_data["started_at"])
 
+        # Validate tenant_id
+        try:
+            token_tenant_id = UUID(str(payload.get("tenant_id", "")))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid tenant_id in token",
+            ) from e
+
         # Build assumed identity context
         assumed_identity_ctx = AssumedIdentityContext(
             operator_user_id=operator_user_uuid,
             assumed_user_id=user_uuid,
-            tenant_id=UUID(payload.get("tenant_id", "")),
+            tenant_id=token_tenant_id,
             reason=assumed_identity_data.get("reason"),
             started_at=started_at,
         )

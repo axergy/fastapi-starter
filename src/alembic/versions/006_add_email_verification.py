@@ -27,10 +27,12 @@ def upgrade() -> None:
     op.add_column(
         "users",
         sa.Column("email_verified", sa.Boolean(), nullable=False, server_default="false"),
+        schema="public",
     )
     op.add_column(
         "users",
-        sa.Column("email_verified_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("email_verified_at", sa.DateTime(), nullable=True),
+        schema="public",
     )
 
     # Create email_verification_tokens table
@@ -39,23 +41,26 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("token_hash", sa.String(length=255), nullable=False),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("used", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("used_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("used_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["public.users.id"]),
         sa.PrimaryKeyConstraint("id"),
+        schema="public",
     )
     op.create_index(
         "ix_email_verification_tokens_user_id",
         "email_verification_tokens",
         ["user_id"],
+        schema="public",
     )
     op.create_index(
         "ix_email_verification_tokens_token_hash",
         "email_verification_tokens",
         ["token_hash"],
         unique=True,
+        schema="public",
     )
 
 
@@ -64,10 +69,18 @@ def downgrade() -> None:
         return
 
     # Drop email_verification_tokens table
-    op.drop_index("ix_email_verification_tokens_token_hash", "email_verification_tokens")
-    op.drop_index("ix_email_verification_tokens_user_id", "email_verification_tokens")
-    op.drop_table("email_verification_tokens")
+    op.drop_index(
+        "ix_email_verification_tokens_token_hash",
+        table_name="email_verification_tokens",
+        schema="public",
+    )
+    op.drop_index(
+        "ix_email_verification_tokens_user_id",
+        table_name="email_verification_tokens",
+        schema="public",
+    )
+    op.drop_table("email_verification_tokens", schema="public")
 
     # Remove email verification columns from users table
-    op.drop_column("users", "email_verified_at")
-    op.drop_column("users", "email_verified")
+    op.drop_column("users", "email_verified_at", schema="public")
+    op.drop_column("users", "email_verified", schema="public")

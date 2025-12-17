@@ -36,6 +36,7 @@ def upgrade() -> None:
 
     # Also add CHECK constraint for valid slug format (lowercase alphanumeric + underscore)
     # Must match the regex in validators.py: ^[a-z][a-z0-9]*(_[a-z0-9]+)*$
+    # Pattern from TENANT_SLUG_REGEX in src/app/core/security/validators.py
     op.create_check_constraint(
         "ck_tenants_slug_format",
         "tenants",

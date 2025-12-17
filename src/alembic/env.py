@@ -46,24 +46,33 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def include_object(object, name, type_, reflected, compare_to):
+def include_object(obj, name, type_, reflected, compare_to):
     """
-    Filter objects to prevent cross-schema contamination.
-    - Public migrations: only touch tables with schema='public'
-    - Tenant migrations: only touch tables WITHOUT schema='public'
+    Prevent cross-schema contamination.
+
+    - Public migrations (no --tag): include only public schema tables.
+    - Tenant migrations (--tag <schema>): include:
+      * metadata tenant tables (schema=None) and explicitly-tagged tenant tables
+      * reflected DB objects only for the active tenant schema (avoid drift/noise)
     """
-    if type_ == "table":
-        is_tenant_migration = context.get_tag_argument() is not None
-        object_schema = getattr(object, "schema", None)
+    tag_schema = context.get_tag_argument()
 
-        if is_tenant_migration:
-            # Tenant migrations should ONLY touch tables WITHOUT 'public' schema
-            return object_schema != "public"
-        else:
-            # Public migrations should ONLY touch tables WITH 'public' schema
-            return object_schema == "public"
+    if type_ != "table":
+        return True
 
-    return True
+    object_schema = getattr(obj, "schema", None)
+
+    # Public migration: only public schema tables.
+    if not tag_schema:
+        return object_schema == "public"
+
+    # Tenant migration:
+    if reflected:
+        # Only the active tenant schema should be compared/reflected.
+        return object_schema == tag_schema
+
+    # metadata side: keep tenant tables (schema=None) and drop public ones
+    return object_schema != "public"
 
 
 def do_run_migrations(connection, schema: str | None = None) -> None:

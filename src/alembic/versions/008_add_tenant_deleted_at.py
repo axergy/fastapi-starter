@@ -26,7 +26,8 @@ def upgrade() -> None:
     # Add deleted_at column (nullable, null means not deleted)
     op.add_column(
         "tenants",
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("deleted_at", sa.DateTime(), nullable=True),
+        schema="public",
     )
 
     # Add partial index for efficient cleanup queries (only indexes non-null values)
@@ -35,6 +36,7 @@ def upgrade() -> None:
         "tenants",
         ["deleted_at"],
         postgresql_where=sa.text("deleted_at IS NOT NULL"),
+        schema="public",
     )
 
     # Add partial index for finding failed tenants for cleanup
@@ -43,6 +45,7 @@ def upgrade() -> None:
         "tenants",
         ["status", "created_at"],
         postgresql_where=sa.text("status = 'failed' AND deleted_at IS NULL"),
+        schema="public",
     )
 
 
@@ -50,6 +53,6 @@ def downgrade() -> None:
     if is_tenant_migration():
         return
 
-    op.drop_index("ix_tenants_status_created_at_failed", "tenants")
-    op.drop_index("ix_tenants_deleted_at", "tenants")
-    op.drop_column("tenants", "deleted_at")
+    op.drop_index("ix_tenants_status_created_at_failed", table_name="tenants", schema="public")
+    op.drop_index("ix_tenants_deleted_at", table_name="tenants", schema="public")
+    op.drop_column("tenants", "deleted_at", schema="public")

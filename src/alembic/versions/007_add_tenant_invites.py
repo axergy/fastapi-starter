@@ -33,14 +33,15 @@ def upgrade() -> None:
         sa.Column("role", sa.String(length=50), nullable=False, server_default="member"),
         sa.Column("invited_by_user_id", sa.Uuid(), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False, server_default="pending"),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("expires_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("accepted_at", sa.DateTime(), nullable=True),
         sa.Column("accepted_by_user_id", sa.Uuid(), nullable=True),
         sa.ForeignKeyConstraint(["tenant_id"], ["public.tenants.id"]),
         sa.ForeignKeyConstraint(["invited_by_user_id"], ["public.users.id"]),
         sa.ForeignKeyConstraint(["accepted_by_user_id"], ["public.users.id"]),
         sa.PrimaryKeyConstraint("id"),
+        schema="public",
     )
 
     # Create indexes
@@ -48,28 +49,33 @@ def upgrade() -> None:
         "ix_tenant_invites_tenant_id",
         "tenant_invites",
         ["tenant_id"],
+        schema="public",
     )
     op.create_index(
         "ix_tenant_invites_email",
         "tenant_invites",
         ["email"],
+        schema="public",
     )
     op.create_index(
         "ix_tenant_invites_token_hash",
         "tenant_invites",
         ["token_hash"],
         unique=True,
+        schema="public",
     )
     op.create_index(
         "ix_tenant_invites_invited_by_user_id",
         "tenant_invites",
         ["invited_by_user_id"],
+        schema="public",
     )
     # Composite index for looking up pending invites by email and tenant
     op.create_index(
         "ix_tenant_invites_email_tenant_status",
         "tenant_invites",
         ["email", "tenant_id", "status"],
+        schema="public",
     )
 
 
@@ -78,11 +84,15 @@ def downgrade() -> None:
         return
 
     # Drop indexes
-    op.drop_index("ix_tenant_invites_email_tenant_status", "tenant_invites")
-    op.drop_index("ix_tenant_invites_invited_by_user_id", "tenant_invites")
-    op.drop_index("ix_tenant_invites_token_hash", "tenant_invites")
-    op.drop_index("ix_tenant_invites_email", "tenant_invites")
-    op.drop_index("ix_tenant_invites_tenant_id", "tenant_invites")
+    op.drop_index(
+        "ix_tenant_invites_email_tenant_status", table_name="tenant_invites", schema="public"
+    )
+    op.drop_index(
+        "ix_tenant_invites_invited_by_user_id", table_name="tenant_invites", schema="public"
+    )
+    op.drop_index("ix_tenant_invites_token_hash", table_name="tenant_invites", schema="public")
+    op.drop_index("ix_tenant_invites_email", table_name="tenant_invites", schema="public")
+    op.drop_index("ix_tenant_invites_tenant_id", table_name="tenant_invites", schema="public")
 
     # Drop table
-    op.drop_table("tenant_invites")
+    op.drop_table("tenant_invites", schema="public")

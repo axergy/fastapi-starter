@@ -27,6 +27,7 @@ def upgrade() -> None:
         return
 
     # Alter column to increase length from 50 to 56 characters
+    # 56 = MAX_TENANT_SLUG_LENGTH from src/app/core/security/validators.py
     op.alter_column(
         "tenants",
         "slug",

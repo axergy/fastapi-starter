@@ -7,8 +7,10 @@ MAX_SCHEMA_LENGTH: Final[int] = 63  # PostgreSQL identifier limit
 TENANT_SCHEMA_PREFIX: Final[str] = "tenant_"
 MAX_TENANT_SLUG_LENGTH: Final[int] = MAX_SCHEMA_LENGTH - len(TENANT_SCHEMA_PREFIX)  # 56
 TENANT_SLUG_REGEX: Final[str] = r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+TENANT_SCHEMA_REGEX: Final[str] = rf"^{TENANT_SCHEMA_PREFIX}[a-z][a-z0-9]*(_[a-z0-9]+)*$"
 
 _TENANT_SLUG_PATTERN: Final[re.Pattern[str]] = re.compile(TENANT_SLUG_REGEX)
+_TENANT_SCHEMA_PATTERN: Final[re.Pattern[str]] = re.compile(TENANT_SCHEMA_REGEX)
 
 
 def validate_tenant_slug_format(slug: str) -> str:
@@ -52,7 +54,7 @@ def validate_schema_name(schema_name: str) -> None:
         )
 
     # Format check - must be tenant_<slug> with proper format
-    if not re.match(r"^tenant_[a-z][a-z0-9]*(_[a-z0-9]+)*$", schema_name):
+    if not _TENANT_SCHEMA_PATTERN.match(schema_name):
         raise ValueError(
             f"Invalid schema name format: {schema_name}. "
             "Must be 'tenant_' followed by lowercase alphanumeric "
