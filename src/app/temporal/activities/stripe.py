@@ -4,12 +4,14 @@ from dataclasses import dataclass
 
 from temporalio import activity
 
+from src.app.temporal.context import TenantCtx
+
 
 @dataclass
 class CreateStripeCustomerInput:
+    ctx: TenantCtx
     email: str
     name: str
-    tenant_id: str
 
 
 @dataclass
@@ -30,7 +32,7 @@ async def create_stripe_customer(
     instead of creating a duplicate resource.
 
     The idempotency key should be deterministic and unique per customer:
-        idempotency_key = f"customer_{tenant_id}_{email}"
+        idempotency_key = f"customer_{ctx.tenant_id}_{email}"
 
     This ensures that if the activity is retried due to network failure or
     worker crash, no duplicate Stripe customers will be created.
@@ -39,15 +41,15 @@ async def create_stripe_customer(
         customer = await stripe.Customer.create(
             email=input.email,
             name=input.name,
-            metadata={"tenant_id": input.tenant_id},
-            idempotency_key=f"customer_{input.tenant_id}_{input.email}",
+            metadata={"tenant_id": input.ctx.tenant_id},
+            idempotency_key=f"customer_{input.ctx.tenant_id}_{input.email}",
         )
 
     Note: Stripe stores idempotency keys for 24 hours, which is sufficient
     for Temporal's retry windows.
 
     Args:
-        input: CreateStripeCustomerInput with email, name, and tenant_id
+        input: CreateStripeCustomerInput with ctx, email, and name
 
     Returns:
         CreateStripeCustomerOutput with the Stripe customer ID

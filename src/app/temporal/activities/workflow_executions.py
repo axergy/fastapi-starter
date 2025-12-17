@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from sqlmodel import Session, select
 from temporalio import activity
 
+from src.app.core.db import get_sync_engine
 from src.app.models.base import utc_now
-
-from ._db import get_sync_engine
 
 
 @dataclass

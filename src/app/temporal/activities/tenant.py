@@ -7,10 +7,10 @@ from uuid import UUID
 from sqlmodel import Session, select
 from temporalio import activity
 
+from src.app.core.db import get_sync_engine
 from src.app.models.base import utc_now
 from src.app.models.public import Tenant, TenantStatus
-
-from ._db import get_sync_engine
+from src.app.temporal.context import TenantCtx
 
 
 @dataclass
@@ -26,13 +26,13 @@ class GetTenantOutput:
 
 @dataclass
 class UpdateTenantStatusInput:
-    tenant_id: str
+    ctx: TenantCtx
     status: str  # "provisioning", "ready", "failed"
 
 
 @dataclass
 class SoftDeleteTenantInput:
-    tenant_id: str
+    ctx: TenantCtx
 
 
 @dataclass
@@ -136,13 +136,13 @@ async def update_tenant_status(input: UpdateTenantStatusInput) -> bool:
     Returns:
         True if status was updated, False if tenant not found
     """
-    activity.logger.info(f"Updating tenant {input.tenant_id} status to: {input.status}")
-    result = await asyncio.to_thread(_sync_update_tenant_status, input.tenant_id, input.status)
+    activity.logger.info(f"Updating tenant {input.ctx.tenant_id} status to: {input.status}")
+    result = await asyncio.to_thread(_sync_update_tenant_status, input.ctx.tenant_id, input.status)
 
     if not result:
-        activity.logger.error(f"Tenant {input.tenant_id} not found")
+        activity.logger.error(f"Tenant {input.ctx.tenant_id} not found")
     else:
-        activity.logger.info(f"Tenant {input.tenant_id} status updated to {input.status}")
+        activity.logger.info(f"Tenant {input.ctx.tenant_id} status updated to {input.status}")
 
     return result
 
@@ -192,12 +192,14 @@ async def soft_delete_tenant(input: SoftDeleteTenantInput) -> SoftDeleteTenantOu
         - success: True if operation succeeded (including idempotent retries)
         - already_deleted: True if tenant was already deleted or didn't exist
     """
-    activity.logger.info(f"Soft-deleting tenant: {input.tenant_id}")
-    result = await asyncio.to_thread(_sync_soft_delete_tenant, input.tenant_id)
+    activity.logger.info(f"Soft-deleting tenant: {input.ctx.tenant_id}")
+    result = await asyncio.to_thread(_sync_soft_delete_tenant, input.ctx.tenant_id)
 
     if result.already_deleted:
-        activity.logger.info(f"Tenant {input.tenant_id} already soft-deleted (idempotent retry)")
+        activity.logger.info(
+            f"Tenant {input.ctx.tenant_id} already soft-deleted (idempotent retry)"
+        )
     else:
-        activity.logger.info(f"Tenant {input.tenant_id} soft-deleted successfully")
+        activity.logger.info(f"Tenant {input.ctx.tenant_id} soft-deleted successfully")
 
     return result

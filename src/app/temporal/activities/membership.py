@@ -9,16 +9,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from temporalio import activity
 
+from src.app.core.db import get_sync_engine
 from src.app.models.base import utc_now
 from src.app.models.public import MembershipRole, UserTenantMembership
-
-from ._db import get_sync_engine
+from src.app.temporal.context import TenantCtx
 
 
 @dataclass
 class CreateMembershipInput:
+    ctx: TenantCtx
     user_id: str
-    tenant_id: str
     role: str = MembershipRole.ADMIN.value
 
 
@@ -102,10 +102,10 @@ async def create_admin_membership(input: CreateMembershipInput) -> bool:
             or other database errors occur
     """
     activity.logger.info(
-        f"Creating membership for user {input.user_id} in tenant {input.tenant_id}"
+        f"Creating membership for user {input.user_id} in tenant {input.ctx.tenant_id}"
     )
     result = await asyncio.to_thread(
-        _sync_create_membership, input.user_id, input.tenant_id, input.role
+        _sync_create_membership, input.user_id, input.ctx.tenant_id, input.role
     )
     activity.logger.info(f"Membership created: {result}")
     return result

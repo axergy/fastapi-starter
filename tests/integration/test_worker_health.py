@@ -25,8 +25,8 @@ async def test_health_endpoint():
     """Test that health endpoint returns correct status."""
     port = get_free_port()
 
-    # Start health server in background
-    task = asyncio.create_task(run_health_server("test-queue", port))
+    # Start health server in background with new signature
+    task = asyncio.create_task(run_health_server("all", ["test-queue"], port))
 
     # Give server time to start
     await asyncio.sleep(0.5)
@@ -38,7 +38,8 @@ async def test_health_endpoint():
             data = response.json()
             assert data["status"] == "healthy"
             assert data["service"] == "temporal-worker"
-            assert data["task_queue"] == "test-queue"
+            assert data["workload"] == "all"
+            assert data["task_queues"] == ["test-queue"]
     finally:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -49,8 +50,8 @@ async def test_ready_endpoint():
     """Test that ready endpoint returns correct status."""
     port = get_free_port()
 
-    # Start health server in background
-    task = asyncio.create_task(run_health_server("test-queue", port))
+    # Start health server in background with new signature
+    task = asyncio.create_task(run_health_server("all", ["test-queue"], port))
 
     # Give server time to start
     await asyncio.sleep(0.5)

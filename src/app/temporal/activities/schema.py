@@ -7,20 +7,19 @@ from sqlalchemy import text
 from sqlmodel import Session
 from temporalio import activity
 
-from src.app.core.db import run_migrations_sync
+from src.app.core.db import get_sync_engine, run_migrations_sync
 from src.app.core.security import validate_schema_name
-
-from ._db import get_sync_engine
+from src.app.temporal.context import TenantCtx
 
 
 @dataclass
 class RunMigrationsInput:
-    schema_name: str
+    ctx: TenantCtx
 
 
 @dataclass
 class DropSchemaInput:
-    schema_name: str
+    ctx: TenantCtx
 
 
 @dataclass
@@ -67,9 +66,11 @@ async def run_tenant_migrations(input: RunMigrationsInput) -> bool:
     Returns:
         True if migrations completed successfully
     """
-    activity.logger.info(f"Running migrations for schema: {input.schema_name}")
-    await asyncio.to_thread(_sync_run_tenant_migrations, input.schema_name)
-    activity.logger.info(f"Migrations complete for schema: {input.schema_name}")
+    if not input.ctx.schema_name:
+        raise ValueError("schema_name is required for run_tenant_migrations")
+    activity.logger.info(f"Running migrations for schema: {input.ctx.schema_name}")
+    await asyncio.to_thread(_sync_run_tenant_migrations, input.ctx.schema_name)
+    activity.logger.info(f"Migrations complete for schema: {input.ctx.schema_name}")
     return True
 
 
@@ -133,12 +134,14 @@ async def drop_tenant_schema(input: DropSchemaInput) -> DropSchemaOutput:
         - success: Always True (operation succeeded)
         - schema_existed: True if schema was dropped, False if already gone
     """
-    activity.logger.info(f"Dropping schema: {input.schema_name}")
-    result = await asyncio.to_thread(_sync_drop_tenant_schema, input.schema_name)
+    if not input.ctx.schema_name:
+        raise ValueError("schema_name is required for drop_tenant_schema")
+    activity.logger.info(f"Dropping schema: {input.ctx.schema_name}")
+    result = await asyncio.to_thread(_sync_drop_tenant_schema, input.ctx.schema_name)
 
     if result.schema_existed:
-        activity.logger.info(f"Schema {input.schema_name} dropped successfully")
+        activity.logger.info(f"Schema {input.ctx.schema_name} dropped successfully")
     else:
-        activity.logger.info(f"Schema {input.schema_name} did not exist (already clean)")
+        activity.logger.info(f"Schema {input.ctx.schema_name} did not exist (already clean)")
 
     return result

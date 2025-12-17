@@ -22,6 +22,7 @@ with workflow.unsafe.imports_passed_through():
         GetTenantInput,
         GetTenantOutput,
         SoftDeleteTenantInput,
+        TenantCtx,
         drop_tenant_schema,
         get_tenant_info,
         soft_delete_tenant,
@@ -53,9 +54,10 @@ class TenantDeletionWorkflow:
             dict with deleted status and tenant_id
         """
         # Step 1: Soft-delete tenant record FIRST (stops API requests immediately)
+        # Minimal ctx - we don't have schema_name yet
         await workflow.execute_activity(
             soft_delete_tenant,
-            SoftDeleteTenantInput(tenant_id=tenant_id),
+            SoftDeleteTenantInput(ctx=TenantCtx(tenant_id=tenant_id)),
             start_to_close_timeout=timedelta(seconds=10),
             retry_policy=RetryPolicy(
                 maximum_attempts=3,
@@ -64,7 +66,7 @@ class TenantDeletionWorkflow:
         )
         workflow.logger.info(f"Tenant {tenant_id} soft-deleted")
 
-        # Step 2: Get tenant info (schema_name)
+        # Step 2: Get tenant info (schema_name) - needed for schema drop
         tenant_info: GetTenantOutput = await workflow.execute_activity(
             get_tenant_info,
             GetTenantInput(tenant_id=tenant_id),
@@ -75,18 +77,20 @@ class TenantDeletionWorkflow:
             ),
         )
 
-        workflow.logger.info(f"Deleting tenant: {tenant_id}, schema: {tenant_info.schema_name}")
+        # Build full TenantCtx with schema_name for remaining activities
+        ctx = TenantCtx(tenant_id=tenant_id, schema_name=tenant_info.schema_name)
+        workflow.logger.info(f"Deleting tenant: {tenant_id}, schema: {ctx.schema_name}")
 
         # Step 3: Drop tenant schema (now safe, tenant already marked deleted)
         await workflow.execute_activity(
             drop_tenant_schema,
-            DropSchemaInput(schema_name=tenant_info.schema_name),
+            DropSchemaInput(ctx=ctx),
             start_to_close_timeout=timedelta(seconds=60),
             retry_policy=RetryPolicy(
                 maximum_attempts=3,
                 initial_interval=timedelta(seconds=1),
             ),
         )
-        workflow.logger.info(f"Schema {tenant_info.schema_name} dropped")
+        workflow.logger.info(f"Schema {ctx.schema_name} dropped")
 
         return {"deleted": True, "tenant_id": tenant_id}

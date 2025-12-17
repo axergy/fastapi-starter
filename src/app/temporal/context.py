@@ -60,7 +60,7 @@ class TenantCtx:
 
     Attributes:
         tenant_id: Unique tenant identifier for isolation and fairness key
-        schema_name: Database schema name for query routing
+        schema_name: Database schema name for query routing (optional for some activities)
         plan: Optional plan tier (free/pro/enterprise) for fairness weighting
 
     Properties:
@@ -68,13 +68,14 @@ class TenantCtx:
 
     Design Notes:
         - Frozen dataclass ensures immutability (prevents accidental modification)
-        - All fields are required except plan (defaults to "free" weighting)
+        - tenant_id is always required
+        - schema_name is optional (some activities like update_tenant_status don't need it)
         - Context is built once in workflow, passed to all activities
         - Prevents "forgot tenant_id" bugs through consistent contract
     """
 
     tenant_id: str
-    schema_name: str
+    schema_name: str | None = None  # Optional - not all activities need schema
     plan: str | None = None  # For fairness weighting
 
     @property

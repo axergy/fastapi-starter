@@ -3,11 +3,13 @@
 import ssl
 from typing import Any
 
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from src.app.core.config import get_settings
 
 _engine: AsyncEngine | None = None
+_sync_engine: Engine | None = None
 
 
 def _get_connect_args() -> dict[str, Any]:
@@ -52,3 +54,26 @@ async def dispose_engine() -> None:
     if _engine is not None:
         await _engine.dispose()
         _engine = None
+
+
+def get_sync_engine() -> Engine:
+    """Get or create synchronous database engine singleton.
+
+    Used by Temporal activities which run in thread pools and need sync DB access.
+    Converts asyncpg URL to psycopg2 (sync driver).
+    """
+    global _sync_engine
+    if _sync_engine is None:
+        settings = get_settings()
+        # Convert async URL to sync (asyncpg -> psycopg2)
+        sync_url = settings.database_url.replace("+asyncpg", "")
+        _sync_engine = create_engine(sync_url, pool_pre_ping=True)
+    return _sync_engine
+
+
+def dispose_sync_engine() -> None:
+    """Dispose of the sync engine. Call on Temporal worker shutdown."""
+    global _sync_engine
+    if _sync_engine is not None:
+        _sync_engine.dispose()
+        _sync_engine = None

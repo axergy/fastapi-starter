@@ -18,6 +18,7 @@ with workflow.unsafe.imports_passed_through():
         CreateStripeCustomerInput,
         CreateStripeCustomerOutput,
         SendEmailInput,
+        TenantCtx,
         create_stripe_customer,
         send_welcome_email,
     )
@@ -35,12 +36,15 @@ class UserOnboardingWorkflow:
 
     @workflow.run
     async def run(self, user_email: str, user_name: str, tenant_id: str) -> str:
+        # Build TenantCtx for tenant-scoped activities
+        ctx = TenantCtx(tenant_id=tenant_id)
+
         stripe_result: CreateStripeCustomerOutput = await workflow.execute_activity(
             create_stripe_customer,
             CreateStripeCustomerInput(
+                ctx=ctx,
                 email=user_email,
                 name=user_name,
-                tenant_id=tenant_id,
             ),
             start_to_close_timeout=timedelta(seconds=30),
             retry_policy=RetryPolicy(

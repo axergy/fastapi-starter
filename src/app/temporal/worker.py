@@ -17,6 +17,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from src.app.core.config import get_settings
+from src.app.core.db import dispose_sync_engine
 from src.app.core.logging import get_logger, setup_logging
 from src.app.temporal.activities import (
     cleanup_email_verification_tokens,
@@ -24,7 +25,6 @@ from src.app.temporal.activities import (
     cleanup_refresh_tokens,
     create_admin_membership,
     create_stripe_customer,
-    dispose_sync_engine,
     drop_tenant_schema,
     get_tenant_info,
     run_tenant_migrations,

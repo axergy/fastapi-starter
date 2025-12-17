@@ -26,6 +26,7 @@ with workflow.unsafe.imports_passed_through():
         GetTenantInput,
         GetTenantOutput,
         RunMigrationsInput,
+        TenantCtx,
         UpdateTenantStatusInput,
         UpdateWorkflowExecutionStatusInput,
         create_admin_membership,
@@ -64,7 +65,7 @@ class TenantProvisioningWorkflow:
         Returns:
             tenant_id: UUID of the tenant
         """
-        schema_name: str | None = None
+        ctx: TenantCtx | None = None
         completed_steps: list[str] = []
 
         try:
@@ -80,14 +81,15 @@ class TenantProvisioningWorkflow:
                 ),
             )
 
-            schema_name = tenant_info.schema_name
-            workflow.logger.info(f"Processing tenant: {tenant_id}, schema: {schema_name}")
+            # Build TenantCtx for all subsequent activities
+            ctx = TenantCtx(tenant_id=tenant_id, schema_name=tenant_info.schema_name)
+            workflow.logger.info(f"Processing tenant: {tenant_id}, schema: {ctx.schema_name}")
 
             # Step 2: Run migrations for tenant schema (creates empty schema)
             # Compensation: drop_tenant_schema
             await workflow.execute_activity(
                 run_tenant_migrations,
-                RunMigrationsInput(schema_name=schema_name),
+                RunMigrationsInput(ctx=ctx),
                 start_to_close_timeout=timedelta(minutes=5),
                 retry_policy=RetryPolicy(
                     maximum_attempts=3,
@@ -103,7 +105,7 @@ class TenantProvisioningWorkflow:
             if user_id:
                 await workflow.execute_activity(
                     create_admin_membership,
-                    CreateMembershipInput(user_id=user_id, tenant_id=tenant_id),
+                    CreateMembershipInput(ctx=ctx, user_id=user_id),
                     start_to_close_timeout=timedelta(seconds=30),
                     retry_policy=RetryPolicy(
                         maximum_attempts=3,
@@ -116,7 +118,7 @@ class TenantProvisioningWorkflow:
             # Step 4: Mark tenant as ready
             await workflow.execute_activity(
                 update_tenant_status,
-                UpdateTenantStatusInput(tenant_id=tenant_id, status=TenantStatus.READY.value),
+                UpdateTenantStatusInput(ctx=ctx, status=TenantStatus.READY.value),
                 start_to_close_timeout=timedelta(seconds=10),
                 retry_policy=RetryPolicy(
                     maximum_attempts=3,
@@ -145,12 +147,15 @@ class TenantProvisioningWorkflow:
             workflow.logger.error(f"Provisioning failed: {e}")
 
             # Run compensations in reverse order (Saga pattern)
-            await self._run_compensations(completed_steps, schema_name, tenant_id)
+            await self._run_compensations(completed_steps, ctx)
+
+            # Build minimal ctx for failure status update (may not have schema_name)
+            failure_ctx = ctx if ctx else TenantCtx(tenant_id=tenant_id)
 
             # Mark tenant as failed after cleanup
             await workflow.execute_activity(
                 update_tenant_status,
-                UpdateTenantStatusInput(tenant_id=tenant_id, status=TenantStatus.FAILED.value),
+                UpdateTenantStatusInput(ctx=failure_ctx, status=TenantStatus.FAILED.value),
                 start_to_close_timeout=timedelta(seconds=10),
                 retry_policy=RetryPolicy(
                     maximum_attempts=3,
@@ -177,17 +182,16 @@ class TenantProvisioningWorkflow:
     async def _run_compensations(
         self,
         completed_steps: list[str],
-        schema_name: str | None,
-        tenant_id: str,
+        ctx: TenantCtx | None,
     ) -> None:
         """Run compensating actions in reverse order (Saga pattern)."""
         for step in reversed(completed_steps):
             try:
-                if step == "migrations" and schema_name:
-                    workflow.logger.info(f"Compensating: dropping schema {schema_name}")
+                if step == "migrations" and ctx and ctx.schema_name:
+                    workflow.logger.info(f"Compensating: dropping schema {ctx.schema_name}")
                     await workflow.execute_activity(
                         drop_tenant_schema,
-                        DropSchemaInput(schema_name=schema_name),
+                        DropSchemaInput(ctx=ctx),
                         start_to_close_timeout=timedelta(seconds=60),
                         retry_policy=RetryPolicy(
                             maximum_attempts=3,

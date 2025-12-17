@@ -7,10 +7,7 @@ Activities should be:
 3. Side-effect aware - External calls go here, not in workflows
 """
 
-# Dataclass inputs/outputs
-# Shared utilities
-from src.app.temporal.activities._db import dispose_sync_engine, get_sync_engine
-
+# Context
 # Activity functions
 from src.app.temporal.activities.cleanup import (
     cleanup_email_verification_tokens,
@@ -45,8 +42,11 @@ from src.app.temporal.activities.workflow_executions import (
     UpdateWorkflowExecutionStatusInput,
     update_workflow_execution_status,
 )
+from src.app.temporal.context import TenantCtx
 
 __all__ = [
+    # Context
+    "TenantCtx",
     # Dataclasses
     "CreateMembershipInput",
     "CreateStripeCustomerInput",
@@ -74,7 +74,4 @@ __all__ = [
     "soft_delete_tenant",
     "update_tenant_status",
     "update_workflow_execution_status",
-    # Utilities
-    "dispose_sync_engine",
-    "get_sync_engine",
 ]
