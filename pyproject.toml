@@ -81,6 +81,14 @@ markers = [
     "integration: Integration tests (require DB/Redis/HTTP)",
     "slow: Tests that take longer to run",
 ]
+filterwarnings = [
+    # Suppress third-party deprecation warnings we can't fix
+    "ignore:.*asyncio.iscoroutinefunction.*:DeprecationWarning:slowapi",
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+    "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning",
+    # asyncpg connection cleanup (harmless)
+    "ignore:coroutine 'Connection._cancel' was never awaited:RuntimeWarning",
+]
 
 # --- MyPy Configuration ---
 [tool.mypy]
