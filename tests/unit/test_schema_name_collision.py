@@ -8,8 +8,12 @@ which would result in identical schema names after PostgreSQL's 63-char truncati
 import pytest
 from pydantic import ValidationError
 
-from src.app.core.security.validators import MAX_SCHEMA_LENGTH, validate_schema_name
-from src.app.models.public.tenant import MAX_SLUG_LENGTH, Tenant
+from src.app.core.security.validators import (
+    MAX_SCHEMA_LENGTH,
+    MAX_TENANT_SLUG_LENGTH,
+    validate_schema_name,
+)
+from src.app.models.public.tenant import Tenant
 from src.app.schemas.auth import RegisterRequest
 
 pytestmark = pytest.mark.unit
@@ -31,7 +35,7 @@ class TestSlugLengthValidation:
 
     def test_valid_max_length_slug(self):
         """Slug at exactly max length should be accepted."""
-        slug = "a" * MAX_SLUG_LENGTH  # 56 characters
+        slug = "a" * MAX_TENANT_SLUG_LENGTH  # 56 characters
         request = RegisterRequest(
             email="test@example.com",
             password="SecureP@ssw0rd!123xyz",
@@ -39,11 +43,11 @@ class TestSlugLengthValidation:
             tenant_name="Test Tenant",
             tenant_slug=slug,
         )
-        assert len(request.tenant_slug) == MAX_SLUG_LENGTH
+        assert len(request.tenant_slug) == MAX_TENANT_SLUG_LENGTH
 
     def test_slug_too_long_rejected(self):
         """Slug exceeding max length should be rejected."""
-        slug = "a" * (MAX_SLUG_LENGTH + 1)  # 57 characters
+        slug = "a" * (MAX_TENANT_SLUG_LENGTH + 1)  # 57 characters
         with pytest.raises(ValidationError) as exc_info:
             RegisterRequest(
                 email="test@example.com",
@@ -120,7 +124,7 @@ class TestTenantModelSchemaName:
 
     def test_tenant_schema_name_max_length(self):
         """Tenant with max-length slug should produce valid schema name."""
-        slug = "a" * MAX_SLUG_LENGTH
+        slug = "a" * MAX_TENANT_SLUG_LENGTH
         tenant = Tenant(
             name="Test Tenant",
             slug=slug,
@@ -160,12 +164,12 @@ class TestCollisionScenario:
         # "Victim" slug - just over the limit
         victim_slug = base_slug + "_victim"  # 57 chars - INVALID
         assert len(victim_slug) == 57
-        assert len(victim_slug) > MAX_SLUG_LENGTH
+        assert len(victim_slug) > MAX_TENANT_SLUG_LENGTH
 
         # "Attacker" slug - also over the limit
         attacker_slug = base_slug + "_attacker"  # 59 chars - INVALID
         assert len(attacker_slug) == 59
-        assert len(attacker_slug) > MAX_SLUG_LENGTH
+        assert len(attacker_slug) > MAX_TENANT_SLUG_LENGTH
 
         # Both should be rejected at registration
         with pytest.raises(ValidationError):
@@ -209,11 +213,11 @@ class TestConstants:
 
     def test_max_slug_length(self):
         """Max slug should account for 'tenant_' prefix."""
-        assert MAX_SLUG_LENGTH == 56
-        assert MAX_SCHEMA_LENGTH - len("tenant_") == MAX_SLUG_LENGTH
+        assert MAX_TENANT_SLUG_LENGTH == 56
+        assert MAX_SCHEMA_LENGTH - len("tenant_") == MAX_TENANT_SLUG_LENGTH
 
     def test_slug_plus_prefix_equals_max_schema(self):
         """Slug at max length + prefix should equal max schema length."""
-        slug = "a" * MAX_SLUG_LENGTH
+        slug = "a" * MAX_TENANT_SLUG_LENGTH
         schema_name = f"tenant_{slug}"
         assert len(schema_name) == MAX_SCHEMA_LENGTH

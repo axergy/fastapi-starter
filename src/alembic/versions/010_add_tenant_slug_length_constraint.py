@@ -14,14 +14,12 @@ from collections.abc import Sequence
 
 from alembic import op
 from src.alembic.migration_utils import is_tenant_migration
+from src.app.core.security.validators import MAX_TENANT_SLUG_LENGTH
 
 revision: str = "010"
 down_revision: str | None = "009"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# Max slug length: PostgreSQL limit (63) - prefix length (7 for "tenant_")
-MAX_SLUG_LENGTH = 56
 
 
 def upgrade() -> None:
@@ -33,7 +31,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_tenants_slug_length",
         "tenants",
-        f"length(slug) <= {MAX_SLUG_LENGTH}",
+        f"length(slug) <= {MAX_TENANT_SLUG_LENGTH}",
     )
 
     # Also add CHECK constraint for valid slug format (lowercase alphanumeric + underscore)

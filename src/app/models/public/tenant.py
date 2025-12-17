@@ -13,9 +13,6 @@ from src.app.core.security.validators import (
 from src.app.models.base import utc_now
 from src.app.models.enums import TenantStatus
 
-# Backwards-compatible alias
-MAX_SLUG_LENGTH = MAX_TENANT_SLUG_LENGTH
-
 
 class Tenant(SQLModel, table=True):
     """Tenant registry in public schema."""
@@ -25,7 +22,7 @@ class Tenant(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
     name: str = Field(max_length=100, index=True)
-    slug: str = Field(max_length=MAX_SLUG_LENGTH, unique=True, index=True)
+    slug: str = Field(max_length=MAX_TENANT_SLUG_LENGTH, unique=True, index=True)
     status: str = Field(default=TenantStatus.PROVISIONING.value)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utc_now)
