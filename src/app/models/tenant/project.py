@@ -18,7 +18,7 @@ class Project(SQLModel, table=True):
     __tablename__ = "projects"
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
-    name: str = Field(max_length=200, index=True)
+    name: str = Field(max_length=200, unique=True, index=True)
     description: str | None = Field(default=None, max_length=1000)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

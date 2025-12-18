@@ -196,8 +196,8 @@ async def list_tenants(
         404: {"description": "Tenant not found"},
     },
 )
-async def get_tenant(slug: str, service: TenantServiceDep) -> TenantRead:
-    """Get tenant by slug."""
+async def get_tenant(slug: str, service: TenantServiceDep, _user: AuthenticatedUser) -> TenantRead:
+    """Get tenant by slug. Requires authentication."""
     tenant = await service.get_by_slug(slug)
     if tenant is None:
         raise HTTPException(

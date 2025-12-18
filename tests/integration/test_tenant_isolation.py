@@ -161,7 +161,10 @@ class TestTenantIsolation:
                 },
             )
             assert list_resp.status_code == 200
-            assert list_resp.json() == []  # No projects visible
+            response_data = list_resp.json()
+            assert response_data["items"] == []  # No projects visible
+            assert response_data["has_more"] is False
+            assert response_data["next_cursor"] is None
 
             # Tenant B should NOT be able to get tenant A's project by ID
             get_resp = await client.get(
@@ -234,8 +237,9 @@ class TestTenantIsolation:
                     "Authorization": f"Bearer {token_a}",
                 },
             )
-            assert len(list_a.json()) == 1
-            assert list_a.json()[0]["name"] == "Project Alpha"
+            response_a = list_a.json()
+            assert len(response_a["items"]) == 1
+            assert response_a["items"][0]["name"] == "Project Alpha"
 
             # Verify tenant B sees only "Project Beta"
             list_b = await client.get(
@@ -245,8 +249,9 @@ class TestTenantIsolation:
                     "Authorization": f"Bearer {token_b}",
                 },
             )
-            assert len(list_b.json()) == 1
-            assert list_b.json()[0]["name"] == "Project Beta"
+            response_b = list_b.json()
+            assert len(response_b["items"]) == 1
+            assert response_b["items"][0]["name"] == "Project Beta"
 
         await db.dispose_engine()
 
@@ -307,5 +312,158 @@ class TestTenantIsolation:
             # Verify deleted
             get_deleted = await client.get(f"/api/v1/projects/{project_id}", headers=headers_a)
             assert get_deleted.status_code == 404
+
+        await db.dispose_engine()
+
+    async def test_duplicate_project_name_rejected(self, users_in_tenants):
+        """Verify duplicate project names are rejected within a tenant."""
+        await db.dispose_engine()
+        app = create_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            # Login as user A (tenant A)
+            login = await client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": users_in_tenants["user_a"]["email"],
+                    "password": users_in_tenants["user_a"]["password"],
+                },
+                headers={"X-Tenant-Slug": users_in_tenants["tenant_a_slug"]},
+            )
+            token = login.json()["access_token"]
+            headers = {
+                "X-Tenant-Slug": users_in_tenants["tenant_a_slug"],
+                "Authorization": f"Bearer {token}",
+            }
+
+            # Create first project
+            resp1 = await client.post(
+                "/api/v1/projects",
+                json={"name": "Duplicate Name"},
+                headers=headers,
+            )
+            assert resp1.status_code == 201
+
+            # Attempt duplicate - should fail with 409
+            resp2 = await client.post(
+                "/api/v1/projects",
+                json={"name": "Duplicate Name"},
+                headers=headers,
+            )
+            assert resp2.status_code == 409
+            assert "already exists" in resp2.json()["detail"].lower()
+
+        await db.dispose_engine()
+
+    async def test_duplicate_project_name_on_update_rejected(self, users_in_tenants):
+        """Verify updating a project to a duplicate name is rejected."""
+        await db.dispose_engine()
+        app = create_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            # Login as user A (tenant A)
+            login = await client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": users_in_tenants["user_a"]["email"],
+                    "password": users_in_tenants["user_a"]["password"],
+                },
+                headers={"X-Tenant-Slug": users_in_tenants["tenant_a_slug"]},
+            )
+            token = login.json()["access_token"]
+            headers = {
+                "X-Tenant-Slug": users_in_tenants["tenant_a_slug"],
+                "Authorization": f"Bearer {token}",
+            }
+
+            # Create first project
+            resp1 = await client.post(
+                "/api/v1/projects",
+                json={"name": "First Project"},
+                headers=headers,
+            )
+            assert resp1.status_code == 201
+
+            # Create second project
+            resp2 = await client.post(
+                "/api/v1/projects",
+                json={"name": "Second Project"},
+                headers=headers,
+            )
+            assert resp2.status_code == 201
+            project_2_id = resp2.json()["id"]
+
+            # Try to rename second project to first project's name - should fail
+            update_resp = await client.patch(
+                f"/api/v1/projects/{project_2_id}",
+                json={"name": "First Project"},
+                headers=headers,
+            )
+            assert update_resp.status_code == 409
+            assert "already exists" in update_resp.json()["detail"].lower()
+
+        await db.dispose_engine()
+
+    async def test_same_project_name_allowed_in_different_tenants(self, users_in_tenants):
+        """Verify the same project name can exist in different tenants."""
+        await db.dispose_engine()
+        app = create_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            # Login as user A (tenant A)
+            login_a = await client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": users_in_tenants["user_a"]["email"],
+                    "password": users_in_tenants["user_a"]["password"],
+                },
+                headers={"X-Tenant-Slug": users_in_tenants["tenant_a_slug"]},
+            )
+            token_a = login_a.json()["access_token"]
+
+            # Login as user B (tenant B)
+            login_b = await client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": users_in_tenants["user_b"]["email"],
+                    "password": users_in_tenants["user_b"]["password"],
+                },
+                headers={"X-Tenant-Slug": users_in_tenants["tenant_b_slug"]},
+            )
+            token_b = login_b.json()["access_token"]
+
+            # Create project with same name in tenant A
+            resp_a = await client.post(
+                "/api/v1/projects",
+                json={"name": "Shared Name"},
+                headers={
+                    "X-Tenant-Slug": users_in_tenants["tenant_a_slug"],
+                    "Authorization": f"Bearer {token_a}",
+                },
+            )
+            assert resp_a.status_code == 201
+
+            # Create project with same name in tenant B - should succeed
+            resp_b = await client.post(
+                "/api/v1/projects",
+                json={"name": "Shared Name"},
+                headers={
+                    "X-Tenant-Slug": users_in_tenants["tenant_b_slug"],
+                    "Authorization": f"Bearer {token_b}",
+                },
+            )
+            assert resp_b.status_code == 201
+
+            # Both tenants should have their own project
+            assert resp_a.json()["id"] != resp_b.json()["id"]
 
         await db.dispose_engine()

@@ -1,15 +1,13 @@
 """Database session dependencies - Lobby Pattern."""
 
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.app.api.dependencies.tenant import ValidatedTenant
 from src.app.core.db import get_public_session, get_tenant_session
-
-if TYPE_CHECKING:
-    pass
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession]:
@@ -22,10 +20,6 @@ DBSession = Annotated[AsyncSession, Depends(get_db_session)]
 
 # Alias for clarity
 PublicDBSession = DBSession
-
-
-# Import here to avoid circular dependency
-from src.app.api.dependencies.tenant import ValidatedTenant  # noqa: E402
 
 
 async def get_tenant_db_session(
