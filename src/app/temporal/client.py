@@ -23,5 +23,14 @@ async def close_temporal_client() -> None:
     """Close the Temporal client. Call during shutdown."""
     global _client
     if _client is not None:
-        await _client.service_client.close()  # type: ignore[attr-defined]
+        # Service client may not have close method depending on connection type
+        service_client = _client.service_client
+        if hasattr(service_client, "close"):
+            await service_client.close()  # type: ignore[attr-defined]
         _client = None
+
+
+def reset_temporal_client() -> None:
+    """Reset client singleton. For testing only."""
+    global _client
+    _client = None

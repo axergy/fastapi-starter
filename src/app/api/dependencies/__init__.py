@@ -19,10 +19,7 @@ from src.app.api.dependencies.auth import (
 )
 from src.app.api.dependencies.db import (
     DBSession,
-    PublicDBSession,
-    TenantDBSession,
     get_db_session,
-    get_tenant_db_session,
 )
 
 # Repositories
@@ -72,21 +69,16 @@ from src.app.api.dependencies.services import (
 # Tenant
 from src.app.api.dependencies.tenant import (
     ValidatedTenant,
-    get_tenant_slug_from_header,
-    get_validated_tenant,
+    get_tenant,
 )
 
 __all__ = [
     # Database
     "DBSession",
-    "PublicDBSession",
-    "TenantDBSession",
     "get_db_session",
-    "get_tenant_db_session",
     # Tenant
     "ValidatedTenant",
-    "get_tenant_slug_from_header",
-    "get_validated_tenant",
+    "get_tenant",
     # Auth
     "AdminUser",
     "AuthenticatedUser",

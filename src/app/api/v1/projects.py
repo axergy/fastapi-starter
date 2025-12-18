@@ -1,6 +1,5 @@
 """Project endpoints - tenant-scoped CRUD example.
 
-This module demonstrates tenant data isolation using TenantDBSession.
 Each tenant has its own 'projects' table in their schema.
 """
 
@@ -10,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 
-from src.app.api.dependencies import CurrentUser, TenantDBSession
+from src.app.api.dependencies import CurrentUser, DBSession
 from src.app.models.base import utc_now
 from src.app.models.tenant import Project
 from src.app.repositories.tenant import ProjectRepository
@@ -30,7 +29,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
     },
 )
 async def list_projects(
-    session: TenantDBSession,
+    session: DBSession,
     _user: CurrentUser,
     cursor: Annotated[str | None, Query(description="Cursor for pagination")] = None,
     limit: Annotated[int, Query(ge=1, le=100, description="Max items to return")] = 50,
@@ -57,7 +56,7 @@ async def list_projects(
 )
 async def get_project(
     project_id: UUID,
-    session: TenantDBSession,
+    session: DBSession,
     _user: CurrentUser,
 ) -> ProjectRead:
     """Get a project by ID."""
@@ -84,7 +83,7 @@ async def get_project(
 )
 async def create_project(
     request: ProjectCreate,
-    session: TenantDBSession,
+    session: DBSession,
     _user: CurrentUser,
 ) -> ProjectRead:
     """Create a new project."""
@@ -135,7 +134,7 @@ async def create_project(
 async def update_project(
     project_id: UUID,
     request: ProjectUpdate,
-    session: TenantDBSession,
+    session: DBSession,
     _user: CurrentUser,
 ) -> ProjectRead:
     """Update an existing project."""
@@ -196,7 +195,7 @@ async def update_project(
 )
 async def delete_project(
     project_id: UUID,
-    session: TenantDBSession,
+    session: DBSession,
     _user: CurrentUser,
 ) -> None:
     """Delete a project."""

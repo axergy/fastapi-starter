@@ -1,18 +1,31 @@
 """Tests for request_id in error responses."""
 
+from collections.abc import Generator
+
 import pytest
 from fastapi.testclient import TestClient
 
+from src.app.core.shutdown import request_tracker
 from src.app.main import create_app
+from src.app.temporal.client import reset_temporal_client
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def client() -> TestClient:
-    """Test client fixture."""
+def client() -> Generator[TestClient]:
+    """Test client fixture with proper cleanup."""
+    # Reset state before test
+    request_tracker.reset()
+    reset_temporal_client()
+
     app = create_app()
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
+
+    # Reset state after test (lifespan sets shutting_down=True)
+    request_tracker.reset()
+    reset_temporal_client()
 
 
 def test_http_exception_includes_request_id(client: TestClient) -> None:

@@ -12,7 +12,7 @@ class Project(SQLModel, table=True):
     """Project entity stored in tenant schema.
 
     Note: No schema= argument in __table_args__ - relies on search_path
-    set by TenantDBSession for schema isolation.
+    set by DBSession for schema isolation.
     """
 
     __tablename__ = "projects"

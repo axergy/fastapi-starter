@@ -75,6 +75,12 @@ class RequestTracker:
             )
             return False
 
+    def reset(self) -> None:
+        """Reset tracker state. For testing only."""
+        self._in_flight = 0
+        self._shutting_down = False
+        self._drain_event = asyncio.Event()
+
 
 # Global request tracker instance
 request_tracker = RequestTracker()
