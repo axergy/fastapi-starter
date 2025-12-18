@@ -7,12 +7,12 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.api.dependencies.tenant import ValidatedTenant
-from src.app.core.db import get_public_session, get_tenant_session
+from src.app.core.db import get_session
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession]:
     """Get database session for public schema (Lobby Pattern)."""
-    async with get_public_session() as session:
+    async with get_session() as session:
         yield session
 
 
@@ -30,7 +30,7 @@ async def get_tenant_db_session(
     Combines tenant validation (from X-Tenant-Slug header) with
     schema-isolated session for tenant-specific data access.
     """
-    async with get_tenant_session(tenant.schema_name) as session:
+    async with get_session(tenant.schema_name) as session:
         yield session
 
 

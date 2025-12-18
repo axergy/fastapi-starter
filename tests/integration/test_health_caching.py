@@ -90,7 +90,7 @@ async def test_health_check_no_db_session_when_cached():
     """Test that cached health checks don't create database sessions."""
     app = create_app()
 
-    with patch("src.app.core.health.get_public_session") as mock_session:
+    with patch("src.app.core.health.get_session") as mock_session:
         mock_session.return_value.__aenter__ = AsyncMock()
         mock_session.return_value.__aexit__ = AsyncMock()
 
@@ -98,7 +98,7 @@ async def test_health_check_no_db_session_when_cached():
             transport=ASGITransport(app=app),
             base_url="http://test",
         ) as client:
-            # First request should call get_public_session
+            # First request should call get_session
             await client.get("/health")
             assert mock_session.call_count == 1
 

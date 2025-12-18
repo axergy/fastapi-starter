@@ -2,7 +2,7 @@
 
 from temporalio import activity
 
-from src.app.core.db import get_public_session
+from src.app.core.db import get_session
 
 
 @activity.defn
@@ -25,7 +25,7 @@ async def cleanup_refresh_tokens(retention_days: int) -> int:
     """
     activity.logger.info(f"Cleaning up refresh tokens older than {retention_days} days")
 
-    async with get_public_session() as session:
+    async with get_session() as session:
         from src.app.repositories.public.token import RefreshTokenRepository
 
         repo = RefreshTokenRepository(session)
@@ -54,7 +54,7 @@ async def cleanup_email_verification_tokens(retention_days: int) -> int:
     """
     activity.logger.info(f"Cleaning up email verification tokens older than {retention_days} days")
 
-    async with get_public_session() as session:
+    async with get_session() as session:
         from src.app.repositories.public.email_verification import (
             EmailVerificationTokenRepository,
         )
@@ -85,7 +85,7 @@ async def cleanup_expired_invites(retention_days: int) -> int:
     """
     activity.logger.info(f"Cleaning up tenant invites older than {retention_days} days")
 
-    async with get_public_session() as session:
+    async with get_session() as session:
         from src.app.repositories.public.invite import TenantInviteRepository
 
         repo = TenantInviteRepository(session)

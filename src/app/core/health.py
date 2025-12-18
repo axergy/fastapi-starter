@@ -11,7 +11,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 
 from src.app.core.config import get_settings
-from src.app.core.db import get_public_session
+from src.app.core.db import get_session
 from src.app.core.redis import get_redis
 from src.app.core.shutdown import request_tracker
 from src.app.temporal.client import get_temporal_client
@@ -70,7 +70,7 @@ def setup_health_endpoint(app: FastAPI) -> None:
 
         # Check database
         try:
-            async with get_public_session() as session:
+            async with get_session() as session:
                 await session.execute(text("SELECT 1"))
             health_status["database"] = "healthy"
         except Exception as e:

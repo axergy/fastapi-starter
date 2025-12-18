@@ -7,13 +7,13 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from src.app.core.db import get_public_session
+from src.app.core.db import get_session
 from src.app.models import Tenant, TenantStatus
 
 
 async def _get_session_for_tenant_validation() -> AsyncGenerator[AsyncSession]:
     """Get session for tenant validation (breaks circular import)."""
-    async with get_public_session() as session:
+    async with get_session() as session:
         yield session
 
 

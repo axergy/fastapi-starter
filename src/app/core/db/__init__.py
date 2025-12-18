@@ -1,7 +1,4 @@
-"""Database utilities - engine, session, migrations.
-
-Re-exports all database-related functions for backward compatibility.
-"""
+"""Database utilities - engine, session, migrations."""
 
 from src.app.core.db.engine import (
     dispose_engine,
@@ -10,7 +7,7 @@ from src.app.core.db.engine import (
     get_sync_engine,
 )
 from src.app.core.db.migrations import run_migrations_sync
-from src.app.core.db.session import get_public_session, get_tenant_session
+from src.app.core.db.session import get_session
 
 __all__ = [
     # Engine (async)
@@ -20,8 +17,7 @@ __all__ = [
     "dispose_sync_engine",
     "get_sync_engine",
     # Session
-    "get_public_session",
-    "get_tenant_session",
+    "get_session",
     # Migrations
     "run_migrations_sync",
 ]
